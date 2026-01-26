@@ -1,0 +1,274 @@
+// FounderyOS Core Canister - Candid Interface
+// Handles Captures, Sprints, Workspaces, Documents, and Templates
+
+type CaptureId = nat64;
+type SprintId = nat64;
+type WorkspaceId = nat64;
+type DocumentId = nat64;
+type TemplateId = nat64;
+type Timestamp = nat64;
+
+type CaptureType = variant {
+    Idea;
+    Task;
+    Project;
+    Reflection;
+    Outline;
+    Calendar;
+};
+
+type Priority = variant {
+    Low;
+    Medium;
+    High;
+    Critical;
+};
+
+type CaptureStatus = variant {
+    Draft;
+    Active;
+    InProgress;
+    Blocked;
+    Completed;
+    Archived;
+    Cancelled;
+};
+
+type SprintStatus = variant {
+    Planning;
+    Active;
+    Review;
+    Completed;
+    Cancelled;
+};
+
+type TemplateType = variant {
+    Capture;
+    Document;
+};
+
+type DynamicFields = record {
+    estimate : opt nat32;
+    due_date : opt Timestamp;
+    start_date : opt Timestamp;
+    assignees : vec text;
+    labels : vec text;
+    related_captures : vec CaptureId;
+    parent_id : opt CaptureId;
+    sprint_id : opt SprintId;
+    workspace_id : opt WorkspaceId;
+    custom_fields : vec record { text; text };
+};
+
+type Capture = record {
+    id : CaptureId;
+    owner : principal;
+    capture_type : CaptureType;
+    title : text;
+    description : opt text;
+    content : opt text;
+    priority : Priority;
+    status : CaptureStatus;
+    fields : DynamicFields;
+    created_at : Timestamp;
+    updated_at : Timestamp;
+};
+
+type CreateCaptureRequest = record {
+    capture_type : CaptureType;
+    title : text;
+    description : opt text;
+    content : opt text;
+    priority : opt Priority;
+    fields : opt DynamicFields;
+};
+
+type UpdateCaptureRequest = record {
+    id : CaptureId;
+    title : opt text;
+    description : opt text;
+    content : opt text;
+    priority : opt Priority;
+    status : opt CaptureStatus;
+    fields : opt DynamicFields;
+};
+
+type CaptureFilter = record {
+    capture_type : opt CaptureType;
+    status : opt CaptureStatus;
+    priority : opt Priority;
+    sprint_id : opt SprintId;
+    workspace_id : opt WorkspaceId;
+    labels : opt vec text;
+};
+
+type PaginationParams = record {
+    offset : opt nat64;
+    limit : opt nat64;
+};
+
+type PaginatedCaptureResponse = record {
+    items : vec Capture;
+    total : nat64;
+    offset : nat64;
+    limit : nat64;
+};
+
+type Sprint = record {
+    id : SprintId;
+    owner : principal;
+    name : text;
+    goal : opt text;
+    status : SprintStatus;
+    start_date : Timestamp;
+    end_date : Timestamp;
+    capacity : opt nat32;
+    capture_ids : vec CaptureId;
+    created_at : Timestamp;
+    updated_at : Timestamp;
+};
+
+type CreateSprintRequest = record {
+    name : text;
+    goal : opt text;
+    start_date : Timestamp;
+    end_date : Timestamp;
+    capacity : opt nat32;
+};
+
+type Workspace = record {
+    id : WorkspaceId;
+    owner : principal;
+    name : text;
+    description : opt text;
+    icon : opt text;
+    parent_id : opt WorkspaceId;
+    is_archived : bool;
+    created_at : Timestamp;
+    updated_at : Timestamp;
+};
+
+type CreateWorkspaceRequest = record {
+    name : text;
+    description : opt text;
+    icon : opt text;
+    parent_id : opt WorkspaceId;
+};
+
+type Document = record {
+    id : DocumentId;
+    workspace_id : WorkspaceId;
+    owner : principal;
+    title : text;
+    content : text;
+    is_template : bool;
+    template_id : opt TemplateId;
+    parent_id : opt DocumentId;
+    created_at : Timestamp;
+    updated_at : Timestamp;
+};
+
+type CreateDocumentRequest = record {
+    workspace_id : WorkspaceId;
+    title : text;
+    content : opt text;
+    template_id : opt TemplateId;
+    parent_id : opt DocumentId;
+};
+
+type Template = record {
+    id : TemplateId;
+    owner : principal;
+    template_type : TemplateType;
+    name : text;
+    description : opt text;
+    content : text;
+    capture_type : opt CaptureType;
+    default_fields : opt DynamicFields;
+    is_public : bool;
+    created_at : Timestamp;
+    updated_at : Timestamp;
+};
+
+type CreateTemplateRequest = record {
+    template_type : TemplateType;
+    name : text;
+    description : opt text;
+    content : text;
+    capture_type : opt CaptureType;
+    default_fields : opt DynamicFields;
+    is_public : opt bool;
+};
+
+type Stats = record {
+    total_captures : nat64;
+    total_sprints : nat64;
+    total_workspaces : nat64;
+    total_documents : nat64;
+    total_templates : nat64;
+    total_users : nat64;
+};
+
+service : (opt vec principal) -> {
+    // Configuration
+    set_auth_service : (principal) -> (variant { Ok; Err : text });
+    get_auth_service : () -> (opt principal) query;
+    get_controllers : () -> (vec principal) query;
+
+    // Capture API
+    create_capture : (CreateCaptureRequest) -> (variant { Ok : Capture; Err : text });
+    get_capture : (CaptureId) -> (opt Capture) query;
+    update_capture : (UpdateCaptureRequest) -> (variant { Ok : Capture; Err : text });
+    delete_capture : (CaptureId) -> (variant { Ok : Capture; Err : text });
+    get_my_captures : (opt CaptureFilter, opt PaginationParams) -> (PaginatedCaptureResponse) query;
+
+    // Sprint API
+    create_sprint : (CreateSprintRequest) -> (variant { Ok : Sprint; Err : text });
+    get_sprint : (SprintId) -> (opt Sprint) query;
+    get_my_sprints : () -> (vec Sprint) query;
+    add_capture_to_sprint : (SprintId, CaptureId) -> (variant { Ok; Err : text });
+    remove_capture_from_sprint : (SprintId, CaptureId) -> (variant { Ok; Err : text });
+
+    // Workspace API
+    create_workspace : (CreateWorkspaceRequest) -> (variant { Ok : Workspace; Err : text });
+    get_workspace : (WorkspaceId) -> (opt Workspace) query;
+    get_my_workspaces : () -> (vec Workspace) query;
+
+    // Document API
+    create_document : (CreateDocumentRequest) -> (variant { Ok : Document; Err : text });
+    get_document : (DocumentId) -> (opt Document) query;
+    update_document : (DocumentId, opt text, opt text) -> (variant { Ok : Document; Err : text });
+    get_workspace_documents : (WorkspaceId) -> (vec Document) query;
+
+    // Template API
+    create_template : (CreateTemplateRequest) -> (variant { Ok : Template; Err : text });
+    get_template : (TemplateId) -> (opt Template) query;
+    get_my_templates : () -> (vec Template) query;
+    get_public_templates : () -> (vec Template) query;
+
+    // Stats & Health
+    get_stats : () -> (Stats) query;
+    health : () -> (text) query;
+
+    // ===== Token-based Authentication API (Session Auth via auth-service) =====
+    // These endpoints validate access_token via inter-canister call to auth-service
+    // and use user_id-based ownership instead of Principal-based ownership
+
+    // Capture API (Token Auth)
+    create_capture_with_token : (text, CreateCaptureRequest) -> (variant { Ok : Capture; Err : text });
+    update_capture_with_token : (text, UpdateCaptureRequest) -> (variant { Ok : Capture; Err : text });
+    delete_capture_with_token : (text, CaptureId) -> (variant { Ok : Capture; Err : text });
+    get_my_captures_with_token : (text, opt CaptureFilter, opt PaginationParams) -> (variant { Ok : PaginatedCaptureResponse; Err : text });
+
+    // Sprint API (Token Auth)
+    create_sprint_with_token : (text, CreateSprintRequest) -> (variant { Ok : Sprint; Err : text });
+    get_my_sprints_with_token : (text) -> (variant { Ok : vec Sprint; Err : text });
+
+    // Workspace API (Token Auth)
+    create_workspace_with_token : (text, CreateWorkspaceRequest) -> (variant { Ok : Workspace; Err : text });
+    get_my_workspaces_with_token : (text) -> (variant { Ok : vec Workspace; Err : text });
+
+    // Template API (Token Auth)
+    create_template_with_token : (text, CreateTemplateRequest) -> (variant { Ok : Template; Err : text });
+    get_my_templates_with_token : (text) -> (variant { Ok : vec Template; Err : text });
+}

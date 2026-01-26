@@ -1,0 +1,9 @@
+{
+  "canisters": {
+    "foundery_os_core": {
+      "type": "custom",
+      "wasm": "wasm/foundery_os_core.wasm",
+      "candid": "src/foundery_os_core.did"
+    }
+  }
+}
