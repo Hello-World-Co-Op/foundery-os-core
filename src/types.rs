@@ -223,6 +223,17 @@ pub struct CreateSprintRequest {
     pub capacity: Option<u32>,
 }
 
+/// Request to update a sprint
+#[derive(Clone, Debug, CandidType, Deserialize)]
+pub struct UpdateSprintRequest {
+    pub name: Option<String>,
+    pub goal: Option<String>,
+    pub status: Option<SprintStatus>,
+    pub start_date: Option<Timestamp>,
+    pub end_date: Option<Timestamp>,
+    pub capacity: Option<u32>,
+}
+
 // =============================================================================
 // Workspace & Document Types
 // =============================================================================
@@ -263,6 +274,16 @@ pub struct CreateWorkspaceRequest {
     pub description: Option<String>,
     pub icon: Option<String>,
     pub parent_id: Option<WorkspaceId>,
+}
+
+/// Request to update a workspace
+#[derive(Clone, Debug, CandidType, Deserialize)]
+pub struct UpdateWorkspaceRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub parent_id: Option<WorkspaceId>,
+    pub is_archived: Option<bool>,
 }
 
 /// Request to create a document
@@ -309,6 +330,17 @@ pub struct CreateTemplateRequest {
     pub name: String,
     pub description: Option<String>,
     pub content: String,
+    pub capture_type: Option<CaptureType>,
+    pub default_fields: Option<DynamicFields>,
+    pub is_public: Option<bool>,
+}
+
+/// Request to update a template
+#[derive(Clone, Debug, CandidType, Deserialize)]
+pub struct UpdateTemplateRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub content: Option<String>,
     pub capture_type: Option<CaptureType>,
     pub default_fields: Option<DynamicFields>,
     pub is_public: Option<bool>,

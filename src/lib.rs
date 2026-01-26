@@ -321,6 +321,45 @@ fn remove_capture_from_sprint(sprint_id: SprintId, capture_id: CaptureId) -> Res
     })
 }
 
+#[update]
+fn update_sprint(id: SprintId, request: UpdateSprintRequest) -> Result<Sprint, String> {
+    let caller = require_authenticated()?;
+
+    STATE.with(|state| {
+        let s = state.borrow();
+        let sprint = s.get_sprint(id)
+            .ok_or_else(|| "Sprint not found".to_string())?;
+
+        if sprint.owner != caller {
+            return Err("Not authorized to update this sprint".to_string());
+        }
+        drop(s);
+
+        state.borrow_mut().update_sprint(id, request)
+            .ok_or_else(|| "Failed to update sprint".to_string())
+    })
+}
+
+#[update]
+fn delete_sprint(id: SprintId) -> Result<Sprint, String> {
+    let caller = require_authenticated()?;
+
+    STATE.with(|state| {
+        {
+            let s = state.borrow();
+            let sprint = s.get_sprint(id)
+                .ok_or_else(|| "Sprint not found".to_string())?;
+
+            if sprint.owner != caller {
+                return Err("Not authorized to delete this sprint".to_string());
+            }
+        }
+
+        state.borrow_mut().delete_sprint(id)
+            .ok_or_else(|| "Failed to delete sprint".to_string())
+    })
+}
+
 // =============================================================================
 // Workspace API
 // =============================================================================
@@ -350,6 +389,45 @@ fn get_my_workspaces() -> Vec<Workspace> {
     }
 
     STATE.with(|state| state.borrow().get_user_workspaces(caller))
+}
+
+#[update]
+fn update_workspace(id: WorkspaceId, request: UpdateWorkspaceRequest) -> Result<Workspace, String> {
+    let caller = require_authenticated()?;
+
+    STATE.with(|state| {
+        let s = state.borrow();
+        let workspace = s.get_workspace(id)
+            .ok_or_else(|| "Workspace not found".to_string())?;
+
+        if workspace.owner != caller {
+            return Err("Not authorized to update this workspace".to_string());
+        }
+        drop(s);
+
+        state.borrow_mut().update_workspace(id, request)
+            .ok_or_else(|| "Failed to update workspace".to_string())
+    })
+}
+
+#[update]
+fn delete_workspace(id: WorkspaceId) -> Result<Workspace, String> {
+    let caller = require_authenticated()?;
+
+    STATE.with(|state| {
+        {
+            let s = state.borrow();
+            let workspace = s.get_workspace(id)
+                .ok_or_else(|| "Workspace not found".to_string())?;
+
+            if workspace.owner != caller {
+                return Err("Not authorized to delete this workspace".to_string());
+            }
+        }
+
+        state.borrow_mut().delete_workspace(id)
+            .ok_or_else(|| "Failed to delete workspace".to_string())
+    })
 }
 
 // =============================================================================
@@ -422,6 +500,26 @@ fn get_workspace_documents(workspace_id: WorkspaceId) -> Vec<Document> {
     })
 }
 
+#[update]
+fn delete_document(id: DocumentId) -> Result<Document, String> {
+    let caller = require_authenticated()?;
+
+    STATE.with(|state| {
+        {
+            let s = state.borrow();
+            let doc = s.get_document(id)
+                .ok_or_else(|| "Document not found".to_string())?;
+
+            if doc.owner != caller {
+                return Err("Not authorized to delete this document".to_string());
+            }
+        }
+
+        state.borrow_mut().delete_document(id)
+            .ok_or_else(|| "Failed to delete document".to_string())
+    })
+}
+
 // =============================================================================
 // Template API
 // =============================================================================
@@ -456,6 +554,45 @@ fn get_my_templates() -> Vec<Template> {
 #[query]
 fn get_public_templates() -> Vec<Template> {
     STATE.with(|state| state.borrow().get_public_templates())
+}
+
+#[update]
+fn update_template(id: TemplateId, request: UpdateTemplateRequest) -> Result<Template, String> {
+    let caller = require_authenticated()?;
+
+    STATE.with(|state| {
+        let s = state.borrow();
+        let template = s.get_template(id)
+            .ok_or_else(|| "Template not found".to_string())?;
+
+        if template.owner != caller {
+            return Err("Not authorized to update this template".to_string());
+        }
+        drop(s);
+
+        state.borrow_mut().update_template(id, request)
+            .ok_or_else(|| "Failed to update template".to_string())
+    })
+}
+
+#[update]
+fn delete_template(id: TemplateId) -> Result<Template, String> {
+    let caller = require_authenticated()?;
+
+    STATE.with(|state| {
+        {
+            let s = state.borrow();
+            let template = s.get_template(id)
+                .ok_or_else(|| "Template not found".to_string())?;
+
+            if template.owner != caller {
+                return Err("Not authorized to delete this template".to_string());
+            }
+        }
+
+        state.borrow_mut().delete_template(id)
+            .ok_or_else(|| "Failed to delete template".to_string())
+    })
 }
 
 // =============================================================================

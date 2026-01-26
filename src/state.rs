@@ -564,6 +564,47 @@ impl State {
             .unwrap_or_default()
     }
 
+    /// Update a sprint
+    pub fn update_sprint(&mut self, id: SprintId, request: UpdateSprintRequest) -> Option<Sprint> {
+        let sprint = self.sprints.get_mut(&id)?;
+        let now = ic_cdk::api::time();
+
+        if let Some(name) = request.name {
+            sprint.name = name;
+        }
+        if let Some(goal) = request.goal {
+            sprint.goal = Some(goal);
+        }
+        if let Some(status) = request.status {
+            sprint.status = status;
+        }
+        if let Some(start_date) = request.start_date {
+            sprint.start_date = start_date;
+        }
+        if let Some(end_date) = request.end_date {
+            sprint.end_date = end_date;
+        }
+        if let Some(capacity) = request.capacity {
+            sprint.capacity = Some(capacity);
+        }
+
+        sprint.updated_at = now;
+
+        Some(sprint.clone())
+    }
+
+    /// Delete a sprint
+    pub fn delete_sprint(&mut self, id: SprintId) -> Option<Sprint> {
+        let sprint = self.sprints.remove(&id)?;
+
+        // Remove from user_sprints index
+        if let Some(user_sprints) = self.user_sprints.get_mut(&sprint.owner) {
+            user_sprints.retain(|&sid| sid != id);
+        }
+
+        Some(sprint)
+    }
+
     // =========================================================================
     // Workspace Operations
     // =========================================================================
@@ -611,6 +652,47 @@ impl State {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Update a workspace
+    pub fn update_workspace(&mut self, id: WorkspaceId, request: UpdateWorkspaceRequest) -> Option<Workspace> {
+        let workspace = self.workspaces.get_mut(&id)?;
+        let now = ic_cdk::api::time();
+
+        if let Some(name) = request.name {
+            workspace.name = name;
+        }
+        if let Some(description) = request.description {
+            workspace.description = Some(description);
+        }
+        if let Some(icon) = request.icon {
+            workspace.icon = Some(icon);
+        }
+        if let Some(parent_id) = request.parent_id {
+            workspace.parent_id = Some(parent_id);
+        }
+        if let Some(is_archived) = request.is_archived {
+            workspace.is_archived = is_archived;
+        }
+
+        workspace.updated_at = now;
+
+        Some(workspace.clone())
+    }
+
+    /// Delete a workspace
+    pub fn delete_workspace(&mut self, id: WorkspaceId) -> Option<Workspace> {
+        let workspace = self.workspaces.remove(&id)?;
+
+        // Remove from user_workspaces index
+        if let Some(user_workspaces) = self.user_workspaces.get_mut(&workspace.owner) {
+            user_workspaces.retain(|&wid| wid != id);
+        }
+
+        // Also remove workspace_documents index
+        self.workspace_documents.remove(&id);
+
+        Some(workspace)
     }
 
     // =========================================================================
@@ -694,6 +776,18 @@ impl State {
             .unwrap_or_default()
     }
 
+    /// Delete a document
+    pub fn delete_document(&mut self, id: DocumentId) -> Option<Document> {
+        let document = self.documents.remove(&id)?;
+
+        // Remove from workspace_documents index
+        if let Some(workspace_docs) = self.workspace_documents.get_mut(&document.workspace_id) {
+            workspace_docs.retain(|&did| did != id);
+        }
+
+        Some(document)
+    }
+
     // =========================================================================
     // Template Operations
     // =========================================================================
@@ -758,6 +852,64 @@ impl State {
             .filter_map(|id| self.templates.get(id))
             .cloned()
             .collect()
+    }
+
+    /// Update a template
+    pub fn update_template(&mut self, id: TemplateId, request: UpdateTemplateRequest) -> Option<Template> {
+        let template = self.templates.get_mut(&id)?;
+        let now = ic_cdk::api::time();
+        let was_public = template.is_public;
+
+        if let Some(name) = request.name {
+            template.name = name;
+        }
+        if let Some(description) = request.description {
+            template.description = Some(description);
+        }
+        if let Some(content) = request.content {
+            template.content = content;
+        }
+        if let Some(capture_type) = request.capture_type {
+            template.capture_type = Some(capture_type);
+        }
+        if let Some(default_fields) = request.default_fields {
+            template.default_fields = Some(default_fields);
+        }
+        if let Some(is_public) = request.is_public {
+            template.is_public = is_public;
+
+            // Update public_templates index
+            if is_public && !was_public {
+                // Add to public templates
+                if !self.public_templates.contains(&id) {
+                    self.public_templates.push(id);
+                }
+            } else if !is_public && was_public {
+                // Remove from public templates
+                self.public_templates.retain(|&tid| tid != id);
+            }
+        }
+
+        template.updated_at = now;
+
+        Some(template.clone())
+    }
+
+    /// Delete a template
+    pub fn delete_template(&mut self, id: TemplateId) -> Option<Template> {
+        let template = self.templates.remove(&id)?;
+
+        // Remove from user_templates index
+        if let Some(user_templates) = self.user_templates.get_mut(&template.owner) {
+            user_templates.retain(|&tid| tid != id);
+        }
+
+        // Remove from public_templates if applicable
+        if template.is_public {
+            self.public_templates.retain(|&tid| tid != id);
+        }
+
+        Some(template)
     }
 }
 

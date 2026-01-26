@@ -1403,6 +1403,730 @@ fn test_get_public_templates() {
 }
 
 // ============================================================================
+// Story FOS-1.1.8: Complete CRUD API Surface
+// ============================================================================
+
+// ============================================================================
+// Task 6.1: Sprint Update/Delete Tests (AC: 1.1.8.1)
+// ============================================================================
+
+#[derive(CandidType, Serialize, Deserialize, Debug)]
+struct UpdateSprintRequest {
+    name: Option<String>,
+    goal: Option<String>,
+    status: Option<SprintStatus>,
+    start_date: Option<u64>,
+    end_date: Option<u64>,
+    capacity: Option<u32>,
+}
+
+#[test]
+fn test_update_sprint() {
+    let (pic, canister_id, user) = setup();
+
+    // Create a sprint
+    let create_request = CreateSprintRequest {
+        name: "Original Sprint".to_string(),
+        goal: Some("Original goal".to_string()),
+        start_date: 1700000000000000000,
+        end_date: 1701000000000000000,
+        capacity: Some(20),
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user,
+        "create_sprint",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Sprint, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let sprint_id = created.unwrap().id;
+
+    // Update the sprint
+    let update_request = UpdateSprintRequest {
+        name: Some("Updated Sprint".to_string()),
+        goal: Some("Updated goal".to_string()),
+        status: Some(SprintStatus::Active),
+        start_date: None,
+        end_date: None,
+        capacity: Some(30),
+    };
+
+    let update_response = pic.update_call(
+        canister_id,
+        user,
+        "update_sprint",
+        encode_args((sprint_id, update_request)).unwrap(),
+    ).unwrap();
+
+    let result: Result<Sprint, String> = decode_one(&unwrap_wasm_result(update_response)).unwrap();
+    assert!(result.is_ok(), "Should update sprint: {:?}", result);
+
+    let updated = result.unwrap();
+    assert_eq!(updated.name, "Updated Sprint");
+    assert_eq!(updated.goal, Some("Updated goal".to_string()));
+    assert_eq!(updated.status, SprintStatus::Active);
+    assert_eq!(updated.capacity, Some(30));
+}
+
+#[test]
+fn test_delete_sprint() {
+    let (pic, canister_id, user) = setup();
+
+    // Create a sprint
+    let create_request = CreateSprintRequest {
+        name: "Sprint to Delete".to_string(),
+        goal: None,
+        start_date: 0,
+        end_date: 100,
+        capacity: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user,
+        "create_sprint",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Sprint, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let sprint_id = created.unwrap().id;
+
+    // Verify it exists
+    let get_response = pic.query_call(
+        canister_id,
+        user,
+        "get_sprint",
+        encode_one(sprint_id).unwrap(),
+    ).unwrap();
+
+    let exists: Option<Sprint> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert!(exists.is_some(), "Sprint should exist before deletion");
+
+    // Delete the sprint
+    let delete_response = pic.update_call(
+        canister_id,
+        user,
+        "delete_sprint",
+        encode_one(sprint_id).unwrap(),
+    ).unwrap();
+
+    let delete_result: Result<Sprint, String> = decode_one(&unwrap_wasm_result(delete_response)).unwrap();
+    assert!(delete_result.is_ok(), "Should delete sprint: {:?}", delete_result);
+
+    // Verify it no longer exists
+    let get_after_delete = pic.query_call(
+        canister_id,
+        user,
+        "get_sprint",
+        encode_one(sprint_id).unwrap(),
+    ).unwrap();
+
+    let not_exists: Option<Sprint> = decode_one(&unwrap_wasm_result(get_after_delete)).unwrap();
+    assert!(not_exists.is_none(), "Sprint should not exist after deletion");
+}
+
+#[test]
+fn test_update_sprint_unauthorized() {
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[111, 112, 113, 114, 115, 116, 117, 118, 119, 120]);
+
+    // User A creates a sprint
+    let create_request = CreateSprintRequest {
+        name: "User A's Sprint".to_string(),
+        goal: None,
+        start_date: 0,
+        end_date: 100,
+        capacity: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_sprint",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Sprint, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let sprint_id = created.unwrap().id;
+
+    // User B tries to update User A's sprint
+    let update_request = UpdateSprintRequest {
+        name: Some("Hacked!".to_string()),
+        goal: None,
+        status: None,
+        start_date: None,
+        end_date: None,
+        capacity: None,
+    };
+
+    let update_response = pic.update_call(
+        canister_id,
+        user_b,
+        "update_sprint",
+        encode_args((sprint_id, update_request)).unwrap(),
+    ).unwrap();
+
+    let result: Result<Sprint, String> = decode_one(&unwrap_wasm_result(update_response)).unwrap();
+    assert!(result.is_err(), "User B should not be able to update User A's sprint");
+    assert!(result.unwrap_err().contains("Not authorized"), "Error should mention authorization");
+}
+
+// ============================================================================
+// Task 6.2: Workspace Update/Delete Tests (AC: 1.1.8.2)
+// ============================================================================
+
+#[derive(CandidType, Serialize, Deserialize, Debug)]
+struct UpdateWorkspaceRequest {
+    name: Option<String>,
+    description: Option<String>,
+    icon: Option<String>,
+    parent_id: Option<u64>,
+    is_archived: Option<bool>,
+}
+
+#[test]
+fn test_update_workspace() {
+    let (pic, canister_id, user) = setup();
+
+    // Create a workspace
+    let create_request = CreateWorkspaceRequest {
+        name: "Original Workspace".to_string(),
+        description: Some("Original description".to_string()),
+        icon: None,
+        parent_id: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user,
+        "create_workspace",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Workspace, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let workspace_id = created.unwrap().id;
+
+    // Update the workspace
+    let update_request = UpdateWorkspaceRequest {
+        name: Some("Updated Workspace".to_string()),
+        description: Some("Updated description".to_string()),
+        icon: Some("🚀".to_string()),
+        parent_id: None,
+        is_archived: Some(true),
+    };
+
+    let update_response = pic.update_call(
+        canister_id,
+        user,
+        "update_workspace",
+        encode_args((workspace_id, update_request)).unwrap(),
+    ).unwrap();
+
+    let result: Result<Workspace, String> = decode_one(&unwrap_wasm_result(update_response)).unwrap();
+    assert!(result.is_ok(), "Should update workspace: {:?}", result);
+
+    let updated = result.unwrap();
+    assert_eq!(updated.name, "Updated Workspace");
+    assert_eq!(updated.description, Some("Updated description".to_string()));
+    assert_eq!(updated.icon, Some("🚀".to_string()));
+    assert!(updated.is_archived);
+}
+
+#[test]
+fn test_delete_workspace() {
+    let (pic, canister_id, user) = setup();
+
+    // Create a workspace
+    let create_request = CreateWorkspaceRequest {
+        name: "Workspace to Delete".to_string(),
+        description: None,
+        icon: None,
+        parent_id: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user,
+        "create_workspace",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Workspace, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let workspace_id = created.unwrap().id;
+
+    // Verify it exists
+    let get_response = pic.query_call(
+        canister_id,
+        user,
+        "get_workspace",
+        encode_one(workspace_id).unwrap(),
+    ).unwrap();
+
+    let exists: Option<Workspace> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert!(exists.is_some(), "Workspace should exist before deletion");
+
+    // Delete the workspace
+    let delete_response = pic.update_call(
+        canister_id,
+        user,
+        "delete_workspace",
+        encode_one(workspace_id).unwrap(),
+    ).unwrap();
+
+    let delete_result: Result<Workspace, String> = decode_one(&unwrap_wasm_result(delete_response)).unwrap();
+    assert!(delete_result.is_ok(), "Should delete workspace: {:?}", delete_result);
+
+    // Verify it no longer exists
+    let get_after_delete = pic.query_call(
+        canister_id,
+        user,
+        "get_workspace",
+        encode_one(workspace_id).unwrap(),
+    ).unwrap();
+
+    let not_exists: Option<Workspace> = decode_one(&unwrap_wasm_result(get_after_delete)).unwrap();
+    assert!(not_exists.is_none(), "Workspace should not exist after deletion");
+}
+
+#[test]
+fn test_delete_workspace_unauthorized() {
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[121, 122, 123, 124, 125, 126, 127, 128, 129, 130]);
+
+    // User A creates a workspace
+    let create_request = CreateWorkspaceRequest {
+        name: "User A's Workspace".to_string(),
+        description: None,
+        icon: None,
+        parent_id: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_workspace",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Workspace, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let workspace_id = created.unwrap().id;
+
+    // User B tries to delete User A's workspace
+    let delete_response = pic.update_call(
+        canister_id,
+        user_b,
+        "delete_workspace",
+        encode_one(workspace_id).unwrap(),
+    ).unwrap();
+
+    let result: Result<Workspace, String> = decode_one(&unwrap_wasm_result(delete_response)).unwrap();
+    assert!(result.is_err(), "User B should not be able to delete User A's workspace");
+    assert!(result.unwrap_err().contains("Not authorized"), "Error should mention authorization");
+}
+
+// ============================================================================
+// Task 6.3: Document Delete Tests (AC: 1.1.8.3)
+// ============================================================================
+
+#[test]
+fn test_delete_document() {
+    let (pic, canister_id, user) = setup();
+
+    // Create a workspace first
+    let workspace_request = CreateWorkspaceRequest {
+        name: "Test Workspace".to_string(),
+        description: None,
+        icon: None,
+        parent_id: None,
+    };
+
+    let workspace_response = pic.update_call(
+        canister_id,
+        user,
+        "create_workspace",
+        encode_one(workspace_request).unwrap(),
+    ).unwrap();
+
+    let workspace: Result<Workspace, String> = decode_one(&unwrap_wasm_result(workspace_response)).unwrap();
+    let workspace_id = workspace.unwrap().id;
+
+    // Create a document
+    let doc_request = CreateDocumentRequest {
+        workspace_id,
+        title: "Document to Delete".to_string(),
+        content: Some("Content".to_string()),
+        template_id: None,
+        parent_id: None,
+    };
+
+    let doc_response = pic.update_call(
+        canister_id,
+        user,
+        "create_document",
+        encode_one(doc_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Document, String> = decode_one(&unwrap_wasm_result(doc_response)).unwrap();
+    let doc_id = created.unwrap().id;
+
+    // Verify it exists
+    let get_response = pic.query_call(
+        canister_id,
+        user,
+        "get_document",
+        encode_one(doc_id).unwrap(),
+    ).unwrap();
+
+    let exists: Option<Document> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert!(exists.is_some(), "Document should exist before deletion");
+
+    // Delete the document
+    let delete_response = pic.update_call(
+        canister_id,
+        user,
+        "delete_document",
+        encode_one(doc_id).unwrap(),
+    ).unwrap();
+
+    let delete_result: Result<Document, String> = decode_one(&unwrap_wasm_result(delete_response)).unwrap();
+    assert!(delete_result.is_ok(), "Should delete document: {:?}", delete_result);
+
+    // Verify it no longer exists
+    let get_after_delete = pic.query_call(
+        canister_id,
+        user,
+        "get_document",
+        encode_one(doc_id).unwrap(),
+    ).unwrap();
+
+    let not_exists: Option<Document> = decode_one(&unwrap_wasm_result(get_after_delete)).unwrap();
+    assert!(not_exists.is_none(), "Document should not exist after deletion");
+
+    // Verify workspace documents list is updated
+    let ws_docs_response = pic.query_call(
+        canister_id,
+        user,
+        "get_workspace_documents",
+        encode_one(workspace_id).unwrap(),
+    ).unwrap();
+
+    let ws_docs: Vec<Document> = decode_one(&unwrap_wasm_result(ws_docs_response)).unwrap();
+    assert!(ws_docs.is_empty(), "Workspace should have no documents after deletion");
+}
+
+#[test]
+fn test_delete_document_unauthorized() {
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[131, 132, 133, 134, 135, 136, 137, 138, 139, 140]);
+
+    // User A creates a workspace and document
+    let workspace_request = CreateWorkspaceRequest {
+        name: "User A's Workspace".to_string(),
+        description: None,
+        icon: None,
+        parent_id: None,
+    };
+
+    let workspace_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_workspace",
+        encode_one(workspace_request).unwrap(),
+    ).unwrap();
+
+    let workspace: Result<Workspace, String> = decode_one(&unwrap_wasm_result(workspace_response)).unwrap();
+    let workspace_id = workspace.unwrap().id;
+
+    let doc_request = CreateDocumentRequest {
+        workspace_id,
+        title: "User A's Document".to_string(),
+        content: None,
+        template_id: None,
+        parent_id: None,
+    };
+
+    let doc_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_document",
+        encode_one(doc_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Document, String> = decode_one(&unwrap_wasm_result(doc_response)).unwrap();
+    let doc_id = created.unwrap().id;
+
+    // User B tries to delete User A's document
+    let delete_response = pic.update_call(
+        canister_id,
+        user_b,
+        "delete_document",
+        encode_one(doc_id).unwrap(),
+    ).unwrap();
+
+    let result: Result<Document, String> = decode_one(&unwrap_wasm_result(delete_response)).unwrap();
+    assert!(result.is_err(), "User B should not be able to delete User A's document");
+    assert!(result.unwrap_err().contains("Not authorized"), "Error should mention authorization");
+}
+
+// ============================================================================
+// Task 6.4: Template Update/Delete Tests (AC: 1.1.8.4)
+// ============================================================================
+
+#[derive(CandidType, Serialize, Deserialize, Debug)]
+struct UpdateTemplateRequest {
+    name: Option<String>,
+    description: Option<String>,
+    content: Option<String>,
+    capture_type: Option<CaptureType>,
+    default_fields: Option<DynamicFields>,
+    is_public: Option<bool>,
+}
+
+#[test]
+fn test_update_template() {
+    let (pic, canister_id, user) = setup();
+
+    // Create a template
+    let create_request = CreateTemplateRequest {
+        template_type: TemplateType::Capture,
+        name: "Original Template".to_string(),
+        description: Some("Original description".to_string()),
+        content: "Original content".to_string(),
+        capture_type: Some(CaptureType::Task),
+        default_fields: None,
+        is_public: Some(false),
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user,
+        "create_template",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Template, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let template_id = created.unwrap().id;
+
+    // Update the template
+    let update_request = UpdateTemplateRequest {
+        name: Some("Updated Template".to_string()),
+        description: Some("Updated description".to_string()),
+        content: Some("Updated content".to_string()),
+        capture_type: Some(CaptureType::Idea),
+        default_fields: None,
+        is_public: Some(true),
+    };
+
+    let update_response = pic.update_call(
+        canister_id,
+        user,
+        "update_template",
+        encode_args((template_id, update_request)).unwrap(),
+    ).unwrap();
+
+    let result: Result<Template, String> = decode_one(&unwrap_wasm_result(update_response)).unwrap();
+    assert!(result.is_ok(), "Should update template: {:?}", result);
+
+    let updated = result.unwrap();
+    assert_eq!(updated.name, "Updated Template");
+    assert_eq!(updated.description, Some("Updated description".to_string()));
+    assert_eq!(updated.content, "Updated content");
+    assert_eq!(updated.capture_type, Some(CaptureType::Idea));
+    assert!(updated.is_public);
+}
+
+#[test]
+fn test_delete_template() {
+    let (pic, canister_id, user) = setup();
+
+    // Create a template
+    let create_request = CreateTemplateRequest {
+        template_type: TemplateType::Document,
+        name: "Template to Delete".to_string(),
+        description: None,
+        content: "Content".to_string(),
+        capture_type: None,
+        default_fields: None,
+        is_public: Some(true),
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user,
+        "create_template",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Template, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let template_id = created.unwrap().id;
+
+    // Verify it exists
+    let get_response = pic.query_call(
+        canister_id,
+        user,
+        "get_template",
+        encode_one(template_id).unwrap(),
+    ).unwrap();
+
+    let exists: Option<Template> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert!(exists.is_some(), "Template should exist before deletion");
+
+    // Verify it's in public templates
+    let public_before = pic.query_call(
+        canister_id,
+        Principal::anonymous(),
+        "get_public_templates",
+        encode_one(()).unwrap(),
+    ).unwrap();
+
+    let public_templates_before: Vec<Template> = decode_one(&unwrap_wasm_result(public_before)).unwrap();
+    assert!(public_templates_before.iter().any(|t| t.id == template_id), "Template should be in public list");
+
+    // Delete the template
+    let delete_response = pic.update_call(
+        canister_id,
+        user,
+        "delete_template",
+        encode_one(template_id).unwrap(),
+    ).unwrap();
+
+    let delete_result: Result<Template, String> = decode_one(&unwrap_wasm_result(delete_response)).unwrap();
+    assert!(delete_result.is_ok(), "Should delete template: {:?}", delete_result);
+
+    // Verify it no longer exists
+    let get_after_delete = pic.query_call(
+        canister_id,
+        user,
+        "get_template",
+        encode_one(template_id).unwrap(),
+    ).unwrap();
+
+    let not_exists: Option<Template> = decode_one(&unwrap_wasm_result(get_after_delete)).unwrap();
+    assert!(not_exists.is_none(), "Template should not exist after deletion");
+
+    // Verify it's removed from public templates
+    let public_after = pic.query_call(
+        canister_id,
+        Principal::anonymous(),
+        "get_public_templates",
+        encode_one(()).unwrap(),
+    ).unwrap();
+
+    let public_templates_after: Vec<Template> = decode_one(&unwrap_wasm_result(public_after)).unwrap();
+    assert!(!public_templates_after.iter().any(|t| t.id == template_id), "Template should be removed from public list");
+}
+
+#[test]
+fn test_delete_template_unauthorized() {
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[141, 142, 143, 144, 145, 146, 147, 148, 149, 150]);
+
+    // User A creates a template
+    let create_request = CreateTemplateRequest {
+        template_type: TemplateType::Capture,
+        name: "User A's Template".to_string(),
+        description: None,
+        content: "Content".to_string(),
+        capture_type: None,
+        default_fields: None,
+        is_public: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_template",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Template, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let template_id = created.unwrap().id;
+
+    // User B tries to delete User A's template
+    let delete_response = pic.update_call(
+        canister_id,
+        user_b,
+        "delete_template",
+        encode_one(template_id).unwrap(),
+    ).unwrap();
+
+    let result: Result<Template, String> = decode_one(&unwrap_wasm_result(delete_response)).unwrap();
+    assert!(result.is_err(), "User B should not be able to delete User A's template");
+    assert!(result.unwrap_err().contains("Not authorized"), "Error should mention authorization");
+}
+
+#[test]
+fn test_template_public_toggle() {
+    let (pic, canister_id, user) = setup();
+
+    // Create a private template
+    let create_request = CreateTemplateRequest {
+        template_type: TemplateType::Document,
+        name: "Toggle Template".to_string(),
+        description: None,
+        content: "Content".to_string(),
+        capture_type: None,
+        default_fields: None,
+        is_public: Some(false),
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user,
+        "create_template",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Template, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let template = created.unwrap();
+    assert!(!template.is_public);
+
+    // Verify not in public list
+    let public_before = pic.query_call(
+        canister_id,
+        Principal::anonymous(),
+        "get_public_templates",
+        encode_one(()).unwrap(),
+    ).unwrap();
+
+    let public_templates_before: Vec<Template> = decode_one(&unwrap_wasm_result(public_before)).unwrap();
+    assert!(!public_templates_before.iter().any(|t| t.id == template.id));
+
+    // Make it public
+    let update_request = UpdateTemplateRequest {
+        name: None,
+        description: None,
+        content: None,
+        capture_type: None,
+        default_fields: None,
+        is_public: Some(true),
+    };
+
+    let update_response = pic.update_call(
+        canister_id,
+        user,
+        "update_template",
+        encode_args((template.id, update_request)).unwrap(),
+    ).unwrap();
+
+    let updated: Result<Template, String> = decode_one(&unwrap_wasm_result(update_response)).unwrap();
+    assert!(updated.unwrap().is_public);
+
+    // Verify now in public list
+    let public_after = pic.query_call(
+        canister_id,
+        Principal::anonymous(),
+        "get_public_templates",
+        encode_one(()).unwrap(),
+    ).unwrap();
+
+    let public_templates_after: Vec<Template> = decode_one(&unwrap_wasm_result(public_after)).unwrap();
+    assert!(public_templates_after.iter().any(|t| t.id == template.id));
+}
+
+// ============================================================================
 // Task 3: Capture Update/Delete Tests (AC: 1.1.7.1)
 // ============================================================================
 

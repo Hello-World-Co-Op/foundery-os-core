@@ -136,6 +136,15 @@ type CreateSprintRequest = record {
     capacity : opt nat32;
 };
 
+type UpdateSprintRequest = record {
+    name : opt text;
+    goal : opt text;
+    status : opt SprintStatus;
+    start_date : opt Timestamp;
+    end_date : opt Timestamp;
+    capacity : opt nat32;
+};
+
 type Workspace = record {
     id : WorkspaceId;
     owner : principal;
@@ -153,6 +162,14 @@ type CreateWorkspaceRequest = record {
     description : opt text;
     icon : opt text;
     parent_id : opt WorkspaceId;
+};
+
+type UpdateWorkspaceRequest = record {
+    name : opt text;
+    description : opt text;
+    icon : opt text;
+    parent_id : opt WorkspaceId;
+    is_archived : opt bool;
 };
 
 type Document = record {
@@ -200,6 +217,15 @@ type CreateTemplateRequest = record {
     is_public : opt bool;
 };
 
+type UpdateTemplateRequest = record {
+    name : opt text;
+    description : opt text;
+    content : opt text;
+    capture_type : opt CaptureType;
+    default_fields : opt DynamicFields;
+    is_public : opt bool;
+};
+
 type Stats = record {
     total_captures : nat64;
     total_sprints : nat64;
@@ -226,6 +252,8 @@ service : (opt vec principal) -> {
     create_sprint : (CreateSprintRequest) -> (variant { Ok : Sprint; Err : text });
     get_sprint : (SprintId) -> (opt Sprint) query;
     get_my_sprints : () -> (vec Sprint) query;
+    update_sprint : (SprintId, UpdateSprintRequest) -> (variant { Ok : Sprint; Err : text });
+    delete_sprint : (SprintId) -> (variant { Ok : Sprint; Err : text });
     add_capture_to_sprint : (SprintId, CaptureId) -> (variant { Ok; Err : text });
     remove_capture_from_sprint : (SprintId, CaptureId) -> (variant { Ok; Err : text });
 
@@ -233,11 +261,14 @@ service : (opt vec principal) -> {
     create_workspace : (CreateWorkspaceRequest) -> (variant { Ok : Workspace; Err : text });
     get_workspace : (WorkspaceId) -> (opt Workspace) query;
     get_my_workspaces : () -> (vec Workspace) query;
+    update_workspace : (WorkspaceId, UpdateWorkspaceRequest) -> (variant { Ok : Workspace; Err : text });
+    delete_workspace : (WorkspaceId) -> (variant { Ok : Workspace; Err : text });
 
     // Document API
     create_document : (CreateDocumentRequest) -> (variant { Ok : Document; Err : text });
     get_document : (DocumentId) -> (opt Document) query;
     update_document : (DocumentId, opt text, opt text) -> (variant { Ok : Document; Err : text });
+    delete_document : (DocumentId) -> (variant { Ok : Document; Err : text });
     get_workspace_documents : (WorkspaceId) -> (vec Document) query;
 
     // Template API
@@ -245,6 +276,8 @@ service : (opt vec principal) -> {
     get_template : (TemplateId) -> (opt Template) query;
     get_my_templates : () -> (vec Template) query;
     get_public_templates : () -> (vec Template) query;
+    update_template : (TemplateId, UpdateTemplateRequest) -> (variant { Ok : Template; Err : text });
+    delete_template : (TemplateId) -> (variant { Ok : Template; Err : text });
 
     // Stats & Health
     get_stats : () -> (Stats) query;
