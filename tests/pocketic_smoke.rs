@@ -3520,3 +3520,98 @@ fn test_fos_4_1_2_archive_discussion() {
     let discussions: Vec<Discussion> = decode_one(&unwrap_wasm_result(list_response)).unwrap();
     assert_eq!(discussions.len(), 0, "Archived discussion should not appear in default list");
 }
+
+// ============================================================================
+// FOS-4.1.2 Additional Tests (Code Review Fixes)
+// ============================================================================
+
+/// H1: Test that anyone can comment in Brainstorm stage (AC-4.1.2.4 related)
+#[test]
+fn test_fos_4_1_2_anyone_can_comment_in_brainstorm_stage() {
+    let (pic, canister_id, proposer) = setup();
+    let random_user = Principal::from_slice(&[99, 98, 97, 96, 95, 94, 93, 92, 91, 90]);
+
+    // Create discussion (in Brainstorm stage by default)
+    let create_request = CreateDiscussionArgs {
+        title: "Open Discussion".to_string(),
+        description: "Anyone should be able to comment in Brainstorm".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        proposer,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    // Random user (not proposer, not contributor) comments in Brainstorm stage
+    let comment_args = AddCommentArgs {
+        discussion_id: 1,
+        content: "I'm a random user commenting in Brainstorm stage!".to_string(),
+        author_type: AuthorType::Human,
+    };
+
+    let comment_response = pic.update_call(
+        canister_id,
+        random_user,  // Not the proposer!
+        "add_comment",
+        encode_one(comment_args).unwrap(),
+    ).unwrap();
+
+    let comment_result: Result<u64, String> = decode_one(&unwrap_wasm_result(comment_response)).unwrap();
+    assert!(comment_result.is_ok(), "Random user should be able to comment in Brainstorm stage");
+}
+
+/// H2: Test that skipping Refining stage is prevented (AC-4.1.2.3)
+#[test]
+fn test_fos_4_1_2_cannot_skip_refining_stage() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion (starts in Brainstorm)
+    let create_request = CreateDiscussionArgs {
+        title: "Stage Skip Test".to_string(),
+        description: "Trying to skip from Brainstorm directly to Ready".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    // Verify we're in Brainstorm
+    let get_response = pic.query_call(
+        canister_id,
+        user,
+        "get_discussion",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+    let discussion: Option<Discussion> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert_eq!(discussion.unwrap().stage, DiscussionStage::Brainstorm);
+
+    // First advance should go to Refining (valid)
+    let advance_response = pic.update_call(
+        canister_id,
+        user,
+        "advance_stage",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+    let advance_result: Result<DiscussionStage, String> = decode_one(&unwrap_wasm_result(advance_response)).unwrap();
+    assert!(advance_result.is_ok(), "Brainstorm → Refining should succeed");
+    assert_eq!(advance_result.unwrap(), DiscussionStage::Refining);
+
+    // Trying to advance to Ready without meeting quality gates should fail
+    // (This proves we can't skip to Ready - quality gates enforce Refining duration)
+    let advance_response2 = pic.update_call(
+        canister_id,
+        user,
+        "advance_stage",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+    let advance_result2: Result<DiscussionStage, String> = decode_one(&unwrap_wasm_result(advance_response2)).unwrap();
+    assert!(advance_result2.is_err(), "Refining → Ready should fail without quality gates");
+    assert!(advance_result2.unwrap_err().contains("Quality gates not met"), "Error should mention quality gates");
+}

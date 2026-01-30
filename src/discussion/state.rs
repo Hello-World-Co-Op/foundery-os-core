@@ -192,7 +192,7 @@ impl DiscussionState {
                     .filter(|c| {
                         !c.is_retracted
                             && c.author_type == AuthorType::Human
-                            && c.content.len() >= SUBSTANTIVE_COMMENT_MIN_CHARS
+                            && c.content.chars().count() >= SUBSTANTIVE_COMMENT_MIN_CHARS
                     })
                     .count() as u64
             })
