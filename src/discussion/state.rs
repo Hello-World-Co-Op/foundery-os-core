@@ -199,8 +199,12 @@ impl DiscussionState {
             .unwrap_or(0)
     }
 
-    /// List discussions with optional filter
-    pub fn list_discussions(&self, filter: Option<DiscussionFilter>) -> Vec<Discussion> {
+    /// List discussions with optional filter and pagination
+    pub fn list_discussions(
+        &self,
+        filter: Option<DiscussionFilter>,
+        pagination: Option<DiscussionPaginationParams>,
+    ) -> PaginatedDiscussionResponse {
         let mut discussions: Vec<Discussion> = self.discussions.values().cloned().collect();
 
         if let Some(ref f) = filter {
@@ -221,7 +225,26 @@ impl DiscussionState {
             discussions.retain(|d| !d.is_archived);
         }
 
-        discussions
+        // Sort by created_at descending (newest first)
+        discussions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        let total = discussions.len() as u64;
+        let pagination = pagination.unwrap_or_default();
+        let offset = pagination.offset.unwrap_or(0);
+        let limit = pagination.limit.unwrap_or(50);
+
+        let items: Vec<Discussion> = discussions
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit as usize)
+            .collect();
+
+        PaginatedDiscussionResponse {
+            items,
+            total,
+            offset,
+            limit,
+        }
     }
 }
 

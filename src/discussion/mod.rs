@@ -21,6 +21,6 @@ pub mod validation;
 
 // Re-export types for external use
 pub use types::{
-    AddCommentArgs, Comment, CreateDiscussionArgs, Discussion, DiscussionFilter, DiscussionStage,
-    QualityGateStatus,
+    AddCommentArgs, Comment, CreateDiscussionArgs, Discussion, DiscussionFilter,
+    DiscussionPaginationParams, DiscussionStage, PaginatedDiscussionResponse, QualityGateStatus,
 };

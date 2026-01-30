@@ -2869,6 +2869,20 @@ struct DiscussionFilter {
     include_archived: Option<bool>,
 }
 
+#[derive(CandidType, Clone, Serialize, Deserialize, Debug, Default)]
+struct DiscussionPaginationParams {
+    offset: Option<u64>,
+    limit: Option<u64>,
+}
+
+#[derive(CandidType, Clone, Serialize, Deserialize, Debug)]
+struct PaginatedDiscussionResponse {
+    items: Vec<Discussion>,
+    total: u64,
+    offset: u64,
+    limit: u64,
+}
+
 #[derive(CandidType, Clone, Serialize, Deserialize, Debug)]
 struct QualityGateStatus {
     participants_met: bool,
@@ -3462,11 +3476,12 @@ fn test_fos_4_1_2_list_discussions() {
         canister_id,
         user,
         "list_discussions",
-        encode_one(None::<DiscussionFilter>).unwrap(),
+        encode_args((None::<DiscussionFilter>, None::<DiscussionPaginationParams>)).unwrap(),
     ).unwrap();
 
-    let discussions: Vec<Discussion> = decode_one(&unwrap_wasm_result(list_response)).unwrap();
-    assert_eq!(discussions.len(), 3, "Should have 3 discussions");
+    let paginated: PaginatedDiscussionResponse = decode_one(&unwrap_wasm_result(list_response)).unwrap();
+    assert_eq!(paginated.items.len(), 3, "Should have 3 discussions");
+    assert_eq!(paginated.total, 3, "Total should be 3");
 }
 
 #[test]
@@ -3514,11 +3529,11 @@ fn test_fos_4_1_2_archive_discussion() {
         canister_id,
         user,
         "list_discussions",
-        encode_one(None::<DiscussionFilter>).unwrap(),
+        encode_args((None::<DiscussionFilter>, None::<DiscussionPaginationParams>)).unwrap(),
     ).unwrap();
 
-    let discussions: Vec<Discussion> = decode_one(&unwrap_wasm_result(list_response)).unwrap();
-    assert_eq!(discussions.len(), 0, "Archived discussion should not appear in default list");
+    let paginated: PaginatedDiscussionResponse = decode_one(&unwrap_wasm_result(list_response)).unwrap();
+    assert_eq!(paginated.items.len(), 0, "Archived discussion should not appear in default list");
 }
 
 // ============================================================================
@@ -3561,6 +3576,83 @@ fn test_fos_4_1_2_anyone_can_comment_in_brainstorm_stage() {
 
     let comment_result: Result<u64, String> = decode_one(&unwrap_wasm_result(comment_response)).unwrap();
     assert!(comment_result.is_ok(), "Random user should be able to comment in Brainstorm stage");
+}
+
+/// D1: Test that discussion state survives canister upgrades (DoD: stable storage)
+#[test]
+fn test_fos_4_1_2_discussion_state_survives_upgrade() {
+    let (pic, canister_id, user) = setup();
+
+    // Create a discussion
+    let create_request = CreateDiscussionArgs {
+        title: "Upgrade Test Discussion".to_string(),
+        description: "Testing that state survives upgrade".to_string(),
+        category: ProposalCategory::Treasury,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let create_result: Result<u64, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    assert!(create_result.is_ok());
+    let discussion_id = create_result.unwrap();
+
+    // Add a comment
+    let comment_args = AddCommentArgs {
+        discussion_id,
+        content: "This comment should survive the upgrade!".to_string(),
+        author_type: AuthorType::Human,
+    };
+
+    let comment_response = pic.update_call(
+        canister_id,
+        user,
+        "add_comment",
+        encode_one(comment_args).unwrap(),
+    ).unwrap();
+
+    let comment_result: Result<u64, String> = decode_one(&unwrap_wasm_result(comment_response)).unwrap();
+    assert!(comment_result.is_ok());
+
+    // Perform canister upgrade (reinstall with same WASM)
+    let wasm_path = std::env::var("CARGO_MANIFEST_DIR")
+        .map(|dir| format!("{}/target/wasm32-unknown-unknown/release/foundery_os_core.wasm", dir))
+        .unwrap_or_else(|_| "target/wasm32-unknown-unknown/release/foundery_os_core.wasm".to_string());
+    let wasm = std::fs::read(&wasm_path).expect("Could not read WASM file for upgrade");
+
+    // Upgrade the canister (this triggers pre_upgrade and post_upgrade)
+    pic.upgrade_canister(canister_id, wasm, vec![], None).expect("Upgrade failed");
+
+    // Verify discussion still exists after upgrade
+    let get_response = pic.query_call(
+        canister_id,
+        user,
+        "get_discussion",
+        encode_one(discussion_id).unwrap(),
+    ).unwrap();
+
+    let discussion: Option<Discussion> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert!(discussion.is_some(), "Discussion should exist after upgrade");
+    let discussion = discussion.unwrap();
+    assert_eq!(discussion.title, "Upgrade Test Discussion", "Discussion title should be preserved");
+    assert_eq!(discussion.category, ProposalCategory::Treasury, "Discussion category should be preserved");
+    assert_eq!(discussion.comment_count, 1, "Comment count should be preserved");
+
+    // Verify comments still exist after upgrade
+    let comments_response = pic.query_call(
+        canister_id,
+        user,
+        "get_comments",
+        encode_args((discussion_id, 0u64, 100u64)).unwrap(),
+    ).unwrap();
+
+    let comments: Vec<Comment> = decode_one(&unwrap_wasm_result(comments_response)).unwrap();
+    assert_eq!(comments.len(), 1, "Comments should be preserved after upgrade");
+    assert_eq!(comments[0].content, "This comment should survive the upgrade!", "Comment content should be preserved");
 }
 
 /// H2: Test that skipping Refining stage is prevented (AC-4.1.2.3)

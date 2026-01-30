@@ -320,6 +320,20 @@ type DiscussionFilter = record {
     include_archived : opt bool;
 };
 
+// Pagination parameters for discussions
+type DiscussionPaginationParams = record {
+    offset : opt nat64;
+    limit : opt nat64;
+};
+
+// Paginated discussion response
+type PaginatedDiscussionResponse = record {
+    items : vec Discussion;
+    total : nat64;
+    offset : nat64;
+    limit : nat64;
+};
+
 // Quality gate status
 type QualityGateStatus = record {
     participants_met : bool;
@@ -407,7 +421,7 @@ service : (opt vec principal) -> {
     // Discussion Management
     create_discussion : (CreateDiscussionArgs) -> (variant { Ok : nat64; Err : text });
     get_discussion : (DiscussionId) -> (opt Discussion) query;
-    list_discussions : (opt DiscussionFilter) -> (vec Discussion) query;
+    list_discussions : (opt DiscussionFilter, opt DiscussionPaginationParams) -> (PaginatedDiscussionResponse) query;
     archive_discussion : (DiscussionId) -> (variant { Ok; Err : text });
 
     // Comment Management

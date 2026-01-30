@@ -60,9 +60,12 @@ pub fn get_discussion(discussion_id: DiscussionId) -> Option<Discussion> {
     with_discussion_state(|state| state.get_discussion(discussion_id).cloned())
 }
 
-/// List discussions with optional filter
-pub fn list_discussions(filter: Option<DiscussionFilter>) -> Vec<Discussion> {
-    with_discussion_state(|state| state.list_discussions(filter))
+/// List discussions with optional filter and pagination
+pub fn list_discussions(
+    filter: Option<DiscussionFilter>,
+    pagination: Option<DiscussionPaginationParams>,
+) -> PaginatedDiscussionResponse {
+    with_discussion_state(|state| state.list_discussions(filter, pagination))
 }
 
 /// Archive a discussion (soft delete)

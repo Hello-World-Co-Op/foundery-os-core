@@ -217,6 +217,28 @@ pub struct DiscussionFilter {
     pub include_archived: Option<bool>,
 }
 
+/// Pagination parameters for discussion queries
+#[derive(CandidType, Deserialize, Serialize, Clone, Debug, Default)]
+pub struct DiscussionPaginationParams {
+    /// Number of items to skip
+    pub offset: Option<u64>,
+    /// Maximum number of items to return
+    pub limit: Option<u64>,
+}
+
+/// Paginated response for discussions
+#[derive(CandidType, Deserialize, Serialize, Clone, Debug)]
+pub struct PaginatedDiscussionResponse {
+    /// List of discussions
+    pub items: Vec<Discussion>,
+    /// Total number of discussions matching the filter
+    pub total: u64,
+    /// Current offset
+    pub offset: u64,
+    /// Current limit
+    pub limit: u64,
+}
+
 // =============================================================================
 // Constants
 // =============================================================================

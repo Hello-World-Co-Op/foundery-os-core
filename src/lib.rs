@@ -780,8 +780,11 @@ fn get_discussion(id: u64) -> Option<discussion::Discussion> {
 }
 
 #[query]
-fn list_discussions(filter: Option<discussion::DiscussionFilter>) -> Vec<discussion::Discussion> {
-    discussion::api::list_discussions(filter)
+fn list_discussions(
+    filter: Option<discussion::DiscussionFilter>,
+    pagination: Option<discussion::DiscussionPaginationParams>,
+) -> discussion::PaginatedDiscussionResponse {
+    discussion::api::list_discussions(filter, pagination)
 }
 
 #[update]
