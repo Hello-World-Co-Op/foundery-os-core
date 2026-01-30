@@ -235,6 +235,102 @@ type Stats = record {
     total_users : nat64;
 };
 
+// =============================================================================
+// Discussion Types (Story FOS-4.1.2)
+// =============================================================================
+
+type DiscussionId = nat64;
+type CommentId = nat64;
+
+// Proposal category (matches governance canister)
+type ProposalCategory = variant {
+    Constitutional;
+    Operational;
+    Treasury;
+    SoftwareDevelopment;
+};
+
+// Discussion stage lifecycle
+type DiscussionStage = variant {
+    Brainstorm;
+    Refining;
+    Ready;
+};
+
+// Author type (human vs AI agent)
+type AuthorType = variant {
+    Human;
+    Agent : record { agent_id : text };
+};
+
+// Invite status
+type InviteStatus = variant {
+    Pending;
+    Accepted;
+    Declined;
+};
+
+// Discussion thread record
+type Discussion = record {
+    id : DiscussionId;
+    title : text;
+    description : text;
+    category : ProposalCategory;
+    proposer : principal;
+    contributors : vec principal;
+    stage : DiscussionStage;
+    created_at : nat64;
+    stage_changed_at : nat64;
+    comment_count : nat64;
+    participant_count : nat64;
+    is_archived : bool;
+};
+
+// Comment record
+type Comment = record {
+    id : CommentId;
+    discussion_id : DiscussionId;
+    author : principal;
+    content : text;
+    author_type : AuthorType;
+    created_at : nat64;
+    is_retracted : bool;
+    retracted_at : opt nat64;
+};
+
+// Arguments for creating a discussion
+type CreateDiscussionArgs = record {
+    title : text;
+    description : text;
+    category : ProposalCategory;
+};
+
+// Arguments for adding a comment
+type AddCommentArgs = record {
+    discussion_id : DiscussionId;
+    content : text;
+    author_type : AuthorType;
+};
+
+// Discussion filter for queries
+type DiscussionFilter = record {
+    stage : opt DiscussionStage;
+    category : opt ProposalCategory;
+    proposer : opt principal;
+    include_archived : opt bool;
+};
+
+// Quality gate status
+type QualityGateStatus = record {
+    participants_met : bool;
+    participants_count : nat64;
+    comments_met : bool;
+    substantive_comments : nat64;
+    duration_met : bool;
+    hours_in_refining : nat64;
+    all_met : bool;
+};
+
 service : (opt vec principal) -> {
     // Configuration
     set_auth_service : (principal) -> (variant { Ok; Err : text });
@@ -304,4 +400,29 @@ service : (opt vec principal) -> {
     // Template API (Token Auth)
     create_template_with_token : (text, CreateTemplateRequest) -> (variant { Ok : Template; Err : text });
     get_my_templates_with_token : (text) -> (variant { Ok : vec Template; Err : text });
+
+    // ===== Discussion API (Story FOS-4.1.2) =====
+    // Governance proposal preparation and collaboration
+
+    // Discussion Management
+    create_discussion : (CreateDiscussionArgs) -> (variant { Ok : nat64; Err : text });
+    get_discussion : (DiscussionId) -> (opt Discussion) query;
+    list_discussions : (opt DiscussionFilter) -> (vec Discussion) query;
+    archive_discussion : (DiscussionId) -> (variant { Ok; Err : text });
+
+    // Comment Management
+    add_comment : (AddCommentArgs) -> (variant { Ok : nat64; Err : text });
+    get_comments : (DiscussionId, nat64, nat64) -> (vec Comment) query;
+    retract_comment : (CommentId) -> (variant { Ok; Err : text });
+
+    // Stage Transitions
+    advance_stage : (DiscussionId) -> (variant { Ok : DiscussionStage; Err : text });
+
+    // Contributor Management
+    invite_contributor : (DiscussionId, principal) -> (variant { Ok; Err : text });
+    respond_to_invite : (DiscussionId, bool) -> (variant { Ok; Err : text });
+
+    // Query Utilities
+    get_quality_gate_status : (DiscussionId) -> (opt QualityGateStatus) query;
+    get_discussion_hash : (DiscussionId) -> (opt text) query;
 }

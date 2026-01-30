@@ -1,3 +1,4 @@
+use crate::discussion::state::{StableDiscussionState, DISCUSSION_STATE};
 use crate::types::*;
 use candid::Principal;
 use std::cell::RefCell;
@@ -942,10 +943,18 @@ pub struct StableState {
     pub user_id_templates: Vec<(String, Vec<TemplateId>)>,  // For session-based auth
     pub public_templates: Vec<TemplateId>,
     pub next_template_id: TemplateId,
+    /// Discussion state (Story FOS-4.1.2)
+    #[serde(default)]
+    pub discussion_state: Option<StableDiscussionState>,
 }
 
 impl From<&State> for StableState {
     fn from(state: &State) -> Self {
+        // Capture discussion state from thread-local
+        let discussion_state = DISCUSSION_STATE.with(|ds| {
+            Some(StableDiscussionState::from(&*ds.borrow()))
+        });
+
         StableState {
             controllers: state.controllers.clone(),
             auth_service: state.auth_service,
@@ -969,12 +978,20 @@ impl From<&State> for StableState {
             user_id_templates: state.user_id_templates.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             public_templates: state.public_templates.clone(),
             next_template_id: state.next_template_id,
+            discussion_state,
         }
     }
 }
 
 impl From<StableState> for State {
     fn from(stable: StableState) -> Self {
+        // Restore discussion state to thread-local
+        if let Some(ds) = stable.discussion_state {
+            DISCUSSION_STATE.with(|state| {
+                *state.borrow_mut() = ds.into();
+            });
+        }
+
         State {
             controllers: stable.controllers,
             auth_service: stable.auth_service,

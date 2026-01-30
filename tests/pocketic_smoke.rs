@@ -2793,3 +2793,730 @@ fn test_template_data_isolation() {
     assert_eq!(public.len(), 1, "User B should see 1 public template");
     assert!(public[0].is_public, "Template should be public");
 }
+
+// ============================================================================
+// Discussion Types (Story FOS-4.1.2)
+// ============================================================================
+
+#[derive(CandidType, Clone, Serialize, Deserialize, Debug, PartialEq)]
+enum ProposalCategory {
+    Constitutional,
+    Operational,
+    Treasury,
+    SoftwareDevelopment,
+}
+
+#[derive(CandidType, Clone, Serialize, Deserialize, Debug, PartialEq)]
+enum DiscussionStage {
+    Brainstorm,
+    Refining,
+    Ready,
+}
+
+#[derive(CandidType, Clone, Serialize, Deserialize, Debug, PartialEq)]
+enum AuthorType {
+    Human,
+    Agent { agent_id: String },
+}
+
+#[derive(CandidType, Clone, Serialize, Deserialize, Debug)]
+struct Discussion {
+    id: u64,
+    title: String,
+    description: String,
+    category: ProposalCategory,
+    proposer: Principal,
+    contributors: Vec<Principal>,
+    stage: DiscussionStage,
+    created_at: u64,
+    stage_changed_at: u64,
+    comment_count: u64,
+    participant_count: u64,
+    is_archived: bool,
+}
+
+#[derive(CandidType, Clone, Serialize, Deserialize, Debug)]
+struct Comment {
+    id: u64,
+    discussion_id: u64,
+    author: Principal,
+    content: String,
+    author_type: AuthorType,
+    created_at: u64,
+    is_retracted: bool,
+    retracted_at: Option<u64>,
+}
+
+#[derive(CandidType, Serialize, Deserialize, Debug)]
+struct CreateDiscussionArgs {
+    title: String,
+    description: String,
+    category: ProposalCategory,
+}
+
+#[derive(CandidType, Serialize, Deserialize, Debug)]
+struct AddCommentArgs {
+    discussion_id: u64,
+    content: String,
+    author_type: AuthorType,
+}
+
+#[derive(CandidType, Clone, Serialize, Deserialize, Debug, Default)]
+struct DiscussionFilter {
+    stage: Option<DiscussionStage>,
+    category: Option<ProposalCategory>,
+    proposer: Option<Principal>,
+    include_archived: Option<bool>,
+}
+
+#[derive(CandidType, Clone, Serialize, Deserialize, Debug)]
+struct QualityGateStatus {
+    participants_met: bool,
+    participants_count: u64,
+    comments_met: bool,
+    substantive_comments: u64,
+    duration_met: bool,
+    hours_in_refining: u64,
+    all_met: bool,
+}
+
+// ============================================================================
+// Discussion Tests - Story FOS-4.1.2
+// AC-4.1.2.1: Discussion threads can be created
+// ============================================================================
+
+#[test]
+fn test_fos_4_1_2_create_discussion() {
+    let (pic, canister_id, user) = setup();
+
+    let request = CreateDiscussionArgs {
+        title: "Test Governance Proposal".to_string(),
+        description: "This is a test description for a governance proposal discussion.".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let response = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(request).unwrap(),
+    ).unwrap();
+
+    let result: Result<u64, String> = decode_one(&unwrap_wasm_result(response)).unwrap();
+    assert!(result.is_ok(), "Discussion creation should succeed");
+    assert_eq!(result.unwrap(), 1, "First discussion should have ID 1");
+
+    // Verify we can retrieve the discussion
+    let get_response = pic.query_call(
+        canister_id,
+        user,
+        "get_discussion",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let discussion: Option<Discussion> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert!(discussion.is_some(), "Discussion should exist");
+
+    let d = discussion.unwrap();
+    assert_eq!(d.title, "Test Governance Proposal");
+    assert_eq!(d.stage, DiscussionStage::Brainstorm);
+    assert_eq!(d.proposer, user);
+    assert_eq!(d.participant_count, 1); // Proposer counts as first participant
+}
+
+#[test]
+fn test_fos_4_1_2_create_discussion_empty_title_rejected() {
+    let (pic, canister_id, user) = setup();
+
+    let request = CreateDiscussionArgs {
+        title: "".to_string(),
+        description: "Description".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let response = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(request).unwrap(),
+    ).unwrap();
+
+    let result: Result<u64, String> = decode_one(&unwrap_wasm_result(response)).unwrap();
+    assert!(result.is_err(), "Empty title should be rejected");
+    assert!(result.unwrap_err().contains("empty"), "Error should mention empty title");
+}
+
+// ============================================================================
+// AC-4.1.2.2: Comments are append-only
+// ============================================================================
+
+#[test]
+fn test_fos_4_1_2_add_comment() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion first
+    let create_request = CreateDiscussionArgs {
+        title: "Discussion for Comments".to_string(),
+        description: "Testing comments".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let discussion_id: Result<u64, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let discussion_id = discussion_id.unwrap();
+
+    // Add a comment
+    let comment_request = AddCommentArgs {
+        discussion_id,
+        content: "This is a test comment with sufficient length for testing purposes.".to_string(),
+        author_type: AuthorType::Human,
+    };
+
+    let comment_response = pic.update_call(
+        canister_id,
+        user,
+        "add_comment",
+        encode_one(comment_request).unwrap(),
+    ).unwrap();
+
+    let comment_result: Result<u64, String> = decode_one(&unwrap_wasm_result(comment_response)).unwrap();
+    assert!(comment_result.is_ok(), "Comment should be added successfully");
+    assert_eq!(comment_result.unwrap(), 1, "First comment should have ID 1");
+
+    // Verify comment is retrievable
+    let get_comments_response = pic.query_call(
+        canister_id,
+        user,
+        "get_comments",
+        encode_args((discussion_id, 0u64, 10u64)).unwrap(),
+    ).unwrap();
+
+    let comments: Vec<Comment> = decode_one(&unwrap_wasm_result(get_comments_response)).unwrap();
+    assert_eq!(comments.len(), 1);
+    assert!(!comments[0].is_retracted);
+}
+
+#[test]
+fn test_fos_4_1_2_retract_comment() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion and add comment
+    let create_request = CreateDiscussionArgs {
+        title: "Discussion for Retraction".to_string(),
+        description: "Testing retraction".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let comment_request = AddCommentArgs {
+        discussion_id: 1,
+        content: "This comment will be retracted".to_string(),
+        author_type: AuthorType::Human,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "add_comment",
+        encode_one(comment_request).unwrap(),
+    ).unwrap();
+
+    // Retract the comment
+    let retract_response = pic.update_call(
+        canister_id,
+        user,
+        "retract_comment",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let retract_result: Result<(), String> = decode_one(&unwrap_wasm_result(retract_response)).unwrap();
+    assert!(retract_result.is_ok(), "Retraction should succeed");
+
+    // Verify comment is marked as retracted but still exists
+    let get_comments_response = pic.query_call(
+        canister_id,
+        user,
+        "get_comments",
+        encode_args((1u64, 0u64, 10u64)).unwrap(),
+    ).unwrap();
+
+    let comments: Vec<Comment> = decode_one(&unwrap_wasm_result(get_comments_response)).unwrap();
+    assert_eq!(comments.len(), 1, "Comment should still exist");
+    assert!(comments[0].is_retracted, "Comment should be marked retracted");
+    assert!(comments[0].retracted_at.is_some(), "Retraction time should be set");
+}
+
+#[test]
+fn test_fos_4_1_2_retract_someone_elses_comment_rejected() {
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[201, 202, 203, 204, 205, 206, 207, 208, 209, 210]);
+
+    // User A creates discussion and adds comment
+    let create_request = CreateDiscussionArgs {
+        title: "Discussion".to_string(),
+        description: "Description".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user_a,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let comment_request = AddCommentArgs {
+        discussion_id: 1,
+        content: "User A's comment".to_string(),
+        author_type: AuthorType::Human,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user_a,
+        "add_comment",
+        encode_one(comment_request).unwrap(),
+    ).unwrap();
+
+    // User B tries to retract User A's comment
+    let retract_response = pic.update_call(
+        canister_id,
+        user_b,
+        "retract_comment",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let retract_result: Result<(), String> = decode_one(&unwrap_wasm_result(retract_response)).unwrap();
+    assert!(retract_result.is_err(), "Should not be able to retract someone else's comment");
+}
+
+// ============================================================================
+// AC-4.1.2.3: Stage transitions
+// ============================================================================
+
+#[test]
+fn test_fos_4_1_2_stage_transition_brainstorm_to_refining() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion in Brainstorm stage
+    let create_request = CreateDiscussionArgs {
+        title: "Stage Transition Test".to_string(),
+        description: "Testing stage transitions".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    // Advance to Refining
+    let advance_response = pic.update_call(
+        canister_id,
+        user,
+        "advance_stage",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let result: Result<DiscussionStage, String> = decode_one(&unwrap_wasm_result(advance_response)).unwrap();
+    assert!(result.is_ok(), "Stage advance should succeed");
+    assert_eq!(result.unwrap(), DiscussionStage::Refining);
+
+    // Verify discussion is now in Refining stage
+    let get_response = pic.query_call(
+        canister_id,
+        user,
+        "get_discussion",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let discussion: Option<Discussion> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert_eq!(discussion.unwrap().stage, DiscussionStage::Refining);
+}
+
+// ============================================================================
+// AC-4.1.2.4: Contributor invites
+// ============================================================================
+
+#[test]
+fn test_fos_4_1_2_invite_contributor() {
+    let (pic, canister_id, proposer) = setup();
+    let contributor = Principal::from_slice(&[211, 212, 213, 214, 215, 216, 217, 218, 219, 220]);
+
+    // Create discussion
+    let create_request = CreateDiscussionArgs {
+        title: "Contributor Test".to_string(),
+        description: "Testing contributors".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        proposer,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    // Invite contributor
+    let invite_response = pic.update_call(
+        canister_id,
+        proposer,
+        "invite_contributor",
+        encode_args((1u64, contributor)).unwrap(),
+    ).unwrap();
+
+    let invite_result: Result<(), String> = decode_one(&unwrap_wasm_result(invite_response)).unwrap();
+    assert!(invite_result.is_ok(), "Invite should succeed");
+
+    // Contributor accepts invite
+    let accept_response = pic.update_call(
+        canister_id,
+        contributor,
+        "respond_to_invite",
+        encode_args((1u64, true)).unwrap(),
+    ).unwrap();
+
+    let accept_result: Result<(), String> = decode_one(&unwrap_wasm_result(accept_response)).unwrap();
+    assert!(accept_result.is_ok(), "Accept should succeed");
+
+    // Verify contributor is added to the discussion
+    let get_response = pic.query_call(
+        canister_id,
+        proposer,
+        "get_discussion",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let discussion: Option<Discussion> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert!(discussion.unwrap().contributors.contains(&contributor), "Contributor should be in list");
+}
+
+// ============================================================================
+// AC-4.1.2.5: Quality gates
+// ============================================================================
+
+#[test]
+fn test_fos_4_1_2_quality_gate_status() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion
+    let create_request = CreateDiscussionArgs {
+        title: "Quality Gate Test".to_string(),
+        description: "Testing quality gates".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    // Check quality gate status
+    let gate_response = pic.query_call(
+        canister_id,
+        user,
+        "get_quality_gate_status",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let gate_status: Option<QualityGateStatus> = decode_one(&unwrap_wasm_result(gate_response)).unwrap();
+    assert!(gate_status.is_some(), "Gate status should be returned");
+
+    let status = gate_status.unwrap();
+    assert!(!status.all_met, "Gates should not be met initially");
+    assert!(!status.participants_met, "Need 3+ participants");
+    assert!(!status.comments_met, "Need 5+ substantive comments");
+}
+
+#[test]
+fn test_fos_4_1_2_quality_gates_prevent_ready_without_meeting_thresholds() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion and advance to Refining
+    let create_request = CreateDiscussionArgs {
+        title: "Quality Gate Block Test".to_string(),
+        description: "Testing quality gate enforcement".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    // Advance to Refining (no quality gates for this transition)
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "advance_stage",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    // Try to advance to Ready (should fail - quality gates not met)
+    let advance_response = pic.update_call(
+        canister_id,
+        user,
+        "advance_stage",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let result: Result<DiscussionStage, String> = decode_one(&unwrap_wasm_result(advance_response)).unwrap();
+    assert!(result.is_err(), "Should not be able to advance to Ready without meeting quality gates");
+    assert!(result.unwrap_err().contains("Quality gates"), "Error should mention quality gates");
+}
+
+// ============================================================================
+// AC-4.1.2.6: Agent comments tagged distinctly
+// ============================================================================
+
+#[test]
+fn test_fos_4_1_2_agent_comments_tagged_distinctly() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion
+    let create_request = CreateDiscussionArgs {
+        title: "Agent Comment Test".to_string(),
+        description: "Testing agent comment tagging".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    // Add agent comment
+    let agent_comment = AddCommentArgs {
+        discussion_id: 1,
+        content: "This is an AI-generated comment providing analysis of the proposal.".to_string(),
+        author_type: AuthorType::Agent { agent_id: "gpt-4".to_string() },
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "add_comment",
+        encode_one(agent_comment).unwrap(),
+    ).unwrap();
+
+    // Verify comment is tagged as Agent
+    let get_comments_response = pic.query_call(
+        canister_id,
+        user,
+        "get_comments",
+        encode_args((1u64, 0u64, 10u64)).unwrap(),
+    ).unwrap();
+
+    let comments: Vec<Comment> = decode_one(&unwrap_wasm_result(get_comments_response)).unwrap();
+    assert_eq!(comments.len(), 1);
+    match &comments[0].author_type {
+        AuthorType::Agent { agent_id } => assert_eq!(agent_id, "gpt-4"),
+        AuthorType::Human => panic!("Comment should be tagged as Agent, not Human"),
+    }
+
+    // Verify agent comment doesn't count toward participant count
+    let get_discussion_response = pic.query_call(
+        canister_id,
+        user,
+        "get_discussion",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let discussion: Option<Discussion> = decode_one(&unwrap_wasm_result(get_discussion_response)).unwrap();
+    // Only proposer should count - agent doesn't add to participant count
+    assert_eq!(discussion.unwrap().participant_count, 1, "Agent should not increase participant count");
+}
+
+// ============================================================================
+// AC-4.1.2.7: Discussion hash for verification
+// ============================================================================
+
+#[test]
+fn test_fos_4_1_2_discussion_hash_generated() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion with some comments
+    let create_request = CreateDiscussionArgs {
+        title: "Hash Test Discussion".to_string(),
+        description: "Testing hash generation".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    let comment = AddCommentArgs {
+        discussion_id: 1,
+        content: "A comment for hash testing".to_string(),
+        author_type: AuthorType::Human,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "add_comment",
+        encode_one(comment).unwrap(),
+    ).unwrap();
+
+    // Get hash
+    let hash_response = pic.query_call(
+        canister_id,
+        user,
+        "get_discussion_hash",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let hash: Option<String> = decode_one(&unwrap_wasm_result(hash_response)).unwrap();
+    assert!(hash.is_some(), "Hash should be returned");
+
+    let hash_value = hash.unwrap();
+    assert!(!hash_value.is_empty(), "Hash should not be empty");
+    assert_eq!(hash_value.len(), 64, "SHA-256 hex hash should be 64 characters");
+}
+
+#[test]
+fn test_fos_4_1_2_discussion_hash_is_deterministic() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion
+    let create_request = CreateDiscussionArgs {
+        title: "Determinism Test".to_string(),
+        description: "Testing hash determinism".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    // Get hash twice
+    let hash_response_1 = pic.query_call(
+        canister_id,
+        user,
+        "get_discussion_hash",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let hash_response_2 = pic.query_call(
+        canister_id,
+        user,
+        "get_discussion_hash",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let hash_1: Option<String> = decode_one(&unwrap_wasm_result(hash_response_1)).unwrap();
+    let hash_2: Option<String> = decode_one(&unwrap_wasm_result(hash_response_2)).unwrap();
+
+    assert_eq!(hash_1, hash_2, "Hash should be deterministic");
+}
+
+#[test]
+fn test_fos_4_1_2_list_discussions() {
+    let (pic, canister_id, user) = setup();
+
+    // Create multiple discussions
+    for i in 1..=3 {
+        let create_request = CreateDiscussionArgs {
+            title: format!("Discussion {}", i),
+            description: format!("Description {}", i),
+            category: ProposalCategory::Operational,
+        };
+
+        let _ = pic.update_call(
+            canister_id,
+            user,
+            "create_discussion",
+            encode_one(create_request).unwrap(),
+        ).unwrap();
+    }
+
+    // List all discussions
+    let list_response = pic.query_call(
+        canister_id,
+        user,
+        "list_discussions",
+        encode_one(None::<DiscussionFilter>).unwrap(),
+    ).unwrap();
+
+    let discussions: Vec<Discussion> = decode_one(&unwrap_wasm_result(list_response)).unwrap();
+    assert_eq!(discussions.len(), 3, "Should have 3 discussions");
+}
+
+#[test]
+fn test_fos_4_1_2_archive_discussion() {
+    let (pic, canister_id, user) = setup();
+
+    // Create discussion
+    let create_request = CreateDiscussionArgs {
+        title: "Archive Test".to_string(),
+        description: "Testing archival".to_string(),
+        category: ProposalCategory::Operational,
+    };
+
+    let _ = pic.update_call(
+        canister_id,
+        user,
+        "create_discussion",
+        encode_one(create_request).unwrap(),
+    ).unwrap();
+
+    // Archive discussion
+    let archive_response = pic.update_call(
+        canister_id,
+        user,
+        "archive_discussion",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let archive_result: Result<(), String> = decode_one(&unwrap_wasm_result(archive_response)).unwrap();
+    assert!(archive_result.is_ok(), "Archive should succeed");
+
+    // Verify discussion is archived
+    let get_response = pic.query_call(
+        canister_id,
+        user,
+        "get_discussion",
+        encode_one(1u64).unwrap(),
+    ).unwrap();
+
+    let discussion: Option<Discussion> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert!(discussion.unwrap().is_archived, "Discussion should be archived");
+
+    // Verify archived discussions are excluded from default list
+    let list_response = pic.query_call(
+        canister_id,
+        user,
+        "list_discussions",
+        encode_one(None::<DiscussionFilter>).unwrap(),
+    ).unwrap();
+
+    let discussions: Vec<Discussion> = decode_one(&unwrap_wasm_result(list_response)).unwrap();
+    assert_eq!(discussions.len(), 0, "Archived discussion should not appear in default list");
+}

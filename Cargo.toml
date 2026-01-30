@@ -13,6 +13,8 @@ ic-cdk-macros = "0.13"
 candid = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 pocket-ic = "6"

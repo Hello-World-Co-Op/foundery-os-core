@@ -1,3 +1,4 @@
+mod discussion;
 mod state;
 mod types;
 
@@ -760,6 +761,85 @@ fn get_stats() -> Stats {
 #[query]
 fn health() -> String {
     "ok".to_string()
+}
+
+// =============================================================================
+// Discussion API (Story FOS-4.1.2)
+// =============================================================================
+
+#[update]
+fn create_discussion(args: discussion::CreateDiscussionArgs) -> Result<u64, String> {
+    let caller = require_authenticated()?;
+    let now = ic_cdk::api::time();
+    discussion::api::create_discussion(caller, args, now)
+}
+
+#[query]
+fn get_discussion(id: u64) -> Option<discussion::Discussion> {
+    discussion::api::get_discussion(id)
+}
+
+#[query]
+fn list_discussions(filter: Option<discussion::DiscussionFilter>) -> Vec<discussion::Discussion> {
+    discussion::api::list_discussions(filter)
+}
+
+#[update]
+fn archive_discussion(discussion_id: u64) -> Result<(), String> {
+    let caller = require_authenticated()?;
+    let now = ic_cdk::api::time();
+    discussion::api::archive_discussion(caller, discussion_id, now)
+}
+
+#[update]
+fn add_comment(args: discussion::AddCommentArgs) -> Result<u64, String> {
+    let caller = require_authenticated()?;
+    let now = ic_cdk::api::time();
+    discussion::api::add_comment(caller, args, now)
+}
+
+#[query]
+fn get_comments(discussion_id: u64, offset: u64, limit: u64) -> Vec<discussion::Comment> {
+    discussion::api::get_comments(discussion_id, offset, limit)
+}
+
+#[update]
+fn retract_comment(comment_id: u64) -> Result<(), String> {
+    let caller = require_authenticated()?;
+    let now = ic_cdk::api::time();
+    discussion::api::retract_comment(caller, comment_id, now)
+}
+
+#[update]
+fn advance_stage(discussion_id: u64) -> Result<discussion::DiscussionStage, String> {
+    let caller = require_authenticated()?;
+    let now = ic_cdk::api::time();
+    discussion::api::advance_stage(caller, discussion_id, now)
+}
+
+#[update]
+fn invite_contributor(discussion_id: u64, invitee: Principal) -> Result<(), String> {
+    let caller = require_authenticated()?;
+    let now = ic_cdk::api::time();
+    discussion::api::invite_contributor(caller, discussion_id, invitee, now)
+}
+
+#[update]
+fn respond_to_invite(discussion_id: u64, accept: bool) -> Result<(), String> {
+    let caller = require_authenticated()?;
+    let now = ic_cdk::api::time();
+    discussion::api::respond_to_invite(caller, discussion_id, accept, now)
+}
+
+#[query]
+fn get_quality_gate_status(discussion_id: u64) -> Option<discussion::QualityGateStatus> {
+    let now = ic_cdk::api::time();
+    discussion::api::get_quality_gate_status(discussion_id, now)
+}
+
+#[query]
+fn get_discussion_hash(discussion_id: u64) -> Option<String> {
+    discussion::api::get_discussion_hash(discussion_id)
 }
 
 // Export candid interface
