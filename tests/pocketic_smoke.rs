@@ -3707,3 +3707,518 @@ fn test_fos_4_1_2_cannot_skip_refining_stage() {
     assert!(advance_result2.is_err(), "Refining → Ready should fail without quality gates");
     assert!(advance_result2.unwrap_err().contains("Quality gates not met"), "Error should mention quality gates");
 }
+
+// ============================================================================
+// FOS-5.6.12: User Data Backend Authorization Tests
+// ============================================================================
+// These tests verify AC-5.6.12.1 through AC-5.6.12.6 for capture, document,
+// workspace, and sprint authorization.
+
+#[test]
+fn test_get_capture_authorization() {
+    // AC-5.6.12.1: get_capture returns None for non-owner
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[201, 202, 203, 204, 205, 206, 207, 208, 209, 210]);
+
+    // User A creates a capture
+    let request = CreateCaptureRequest {
+        capture_type: CaptureType::Task,
+        title: "User A's Private Task".to_string(),
+        description: Some("Private data".to_string()),
+        content: None,
+        priority: Some(Priority::High),
+        fields: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_capture",
+        encode_one(request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Capture, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let capture_id = created.unwrap().id;
+
+    // User A can get their own capture
+    let get_response_a = pic.query_call(
+        canister_id,
+        user_a,
+        "get_capture",
+        encode_one(capture_id).unwrap(),
+    ).unwrap();
+
+    let result_a: Option<Capture> = decode_one(&unwrap_wasm_result(get_response_a)).unwrap();
+    assert!(result_a.is_some(), "User A should be able to get their own capture");
+    assert_eq!(result_a.unwrap().title, "User A's Private Task");
+
+    // User B cannot get User A's capture
+    let get_response_b = pic.query_call(
+        canister_id,
+        user_b,
+        "get_capture",
+        encode_one(capture_id).unwrap(),
+    ).unwrap();
+
+    let result_b: Option<Capture> = decode_one(&unwrap_wasm_result(get_response_b)).unwrap();
+    assert!(result_b.is_none(), "User B should NOT be able to get User A's capture");
+
+    // Anonymous user cannot get the capture
+    let get_response_anon = pic.query_call(
+        canister_id,
+        Principal::anonymous(),
+        "get_capture",
+        encode_one(capture_id).unwrap(),
+    ).unwrap();
+
+    let result_anon: Option<Capture> = decode_one(&unwrap_wasm_result(get_response_anon)).unwrap();
+    assert!(result_anon.is_none(), "Anonymous user should NOT be able to get any capture");
+}
+
+#[test]
+fn test_get_workspace_authorization() {
+    // AC-5.6.12.3: get_workspace returns None for non-owner
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[211, 212, 213, 214, 215, 216, 217, 218, 219, 220]);
+
+    // User A creates a workspace
+    let request = CreateWorkspaceRequest {
+        name: "User A's Private Workspace".to_string(),
+        description: Some("Private workspace data".to_string()),
+        icon: None,
+        parent_id: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_workspace",
+        encode_one(request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Workspace, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let workspace_id = created.unwrap().id;
+
+    // User A can get their own workspace
+    let get_response_a = pic.query_call(
+        canister_id,
+        user_a,
+        "get_workspace",
+        encode_one(workspace_id).unwrap(),
+    ).unwrap();
+
+    let result_a: Option<Workspace> = decode_one(&unwrap_wasm_result(get_response_a)).unwrap();
+    assert!(result_a.is_some(), "User A should be able to get their own workspace");
+    assert_eq!(result_a.unwrap().name, "User A's Private Workspace");
+
+    // User B cannot get User A's workspace
+    let get_response_b = pic.query_call(
+        canister_id,
+        user_b,
+        "get_workspace",
+        encode_one(workspace_id).unwrap(),
+    ).unwrap();
+
+    let result_b: Option<Workspace> = decode_one(&unwrap_wasm_result(get_response_b)).unwrap();
+    assert!(result_b.is_none(), "User B should NOT be able to get User A's workspace");
+
+    // Anonymous user cannot get the workspace
+    let get_response_anon = pic.query_call(
+        canister_id,
+        Principal::anonymous(),
+        "get_workspace",
+        encode_one(workspace_id).unwrap(),
+    ).unwrap();
+
+    let result_anon: Option<Workspace> = decode_one(&unwrap_wasm_result(get_response_anon)).unwrap();
+    assert!(result_anon.is_none(), "Anonymous user should NOT be able to get any workspace");
+}
+
+#[test]
+fn test_get_sprint_authorization() {
+    // AC-5.6.12.1: get_sprint returns None for non-owner (sprints follow capture pattern)
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[221, 222, 223, 224, 225, 226, 227, 228, 229, 230]);
+
+    // User A creates a sprint
+    let request = CreateSprintRequest {
+        name: "User A's Sprint".to_string(),
+        goal: Some("Private sprint goal".to_string()),
+        start_date: 1704067200000000000, // 2024-01-01
+        end_date: 1704672000000000000,   // 2024-01-08
+        capacity: Some(40),
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_sprint",
+        encode_one(request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Sprint, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let sprint_id = created.unwrap().id;
+
+    // User A can get their own sprint
+    let get_response_a = pic.query_call(
+        canister_id,
+        user_a,
+        "get_sprint",
+        encode_one(sprint_id).unwrap(),
+    ).unwrap();
+
+    let result_a: Option<Sprint> = decode_one(&unwrap_wasm_result(get_response_a)).unwrap();
+    assert!(result_a.is_some(), "User A should be able to get their own sprint");
+    assert_eq!(result_a.unwrap().name, "User A's Sprint");
+
+    // User B cannot get User A's sprint
+    let get_response_b = pic.query_call(
+        canister_id,
+        user_b,
+        "get_sprint",
+        encode_one(sprint_id).unwrap(),
+    ).unwrap();
+
+    let result_b: Option<Sprint> = decode_one(&unwrap_wasm_result(get_response_b)).unwrap();
+    assert!(result_b.is_none(), "User B should NOT be able to get User A's sprint");
+}
+
+#[test]
+fn test_get_document_authorization() {
+    // AC-5.6.12.2: get_document returns None for non-owner
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[231, 232, 233, 234, 235, 236, 237, 238, 239, 240]);
+
+    // User A creates a workspace first
+    let ws_request = CreateWorkspaceRequest {
+        name: "Workspace for Doc Test".to_string(),
+        description: None,
+        icon: None,
+        parent_id: None,
+    };
+
+    let ws_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_workspace",
+        encode_one(ws_request).unwrap(),
+    ).unwrap();
+
+    let workspace: Result<Workspace, String> = decode_one(&unwrap_wasm_result(ws_response)).unwrap();
+    let workspace_id = workspace.unwrap().id;
+
+    // User A creates a document
+    let doc_request = CreateDocumentRequest {
+        workspace_id,
+        title: "User A's Private Document".to_string(),
+        content: Some("Sensitive content".to_string()),
+        template_id: None,
+        parent_id: None,
+    };
+
+    let doc_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_document",
+        encode_one(doc_request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Document, String> = decode_one(&unwrap_wasm_result(doc_response)).unwrap();
+    let document_id = created.unwrap().id;
+
+    // User A can get their own document
+    let get_response_a = pic.query_call(
+        canister_id,
+        user_a,
+        "get_document",
+        encode_one(document_id).unwrap(),
+    ).unwrap();
+
+    let result_a: Option<Document> = decode_one(&unwrap_wasm_result(get_response_a)).unwrap();
+    assert!(result_a.is_some(), "User A should be able to get their own document");
+    assert_eq!(result_a.unwrap().title, "User A's Private Document");
+
+    // User B cannot get User A's document
+    let get_response_b = pic.query_call(
+        canister_id,
+        user_b,
+        "get_document",
+        encode_one(document_id).unwrap(),
+    ).unwrap();
+
+    let result_b: Option<Document> = decode_one(&unwrap_wasm_result(get_response_b)).unwrap();
+    assert!(result_b.is_none(), "User B should NOT be able to get User A's document");
+}
+
+#[test]
+fn test_list_captures_ownership_filter() {
+    // AC-5.6.12.5: list operations return only data owned by caller
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[241, 242, 243, 244, 245, 246, 247, 248, 249, 250]);
+
+    // User A creates multiple captures
+    for i in 1..=3 {
+        let request = CreateCaptureRequest {
+            capture_type: CaptureType::Task,
+            title: format!("User A's Task {}", i),
+            description: None,
+            content: None,
+            priority: Some(Priority::Medium),
+            fields: None,
+        };
+
+        pic.update_call(
+            canister_id,
+            user_a,
+            "create_capture",
+            encode_one(request).unwrap(),
+        ).unwrap();
+    }
+
+    // User B creates multiple captures
+    for i in 1..=2 {
+        let request = CreateCaptureRequest {
+            capture_type: CaptureType::Idea,
+            title: format!("User B's Idea {}", i),
+            description: None,
+            content: None,
+            priority: Some(Priority::Low),
+            fields: None,
+        };
+
+        pic.update_call(
+            canister_id,
+            user_b,
+            "create_capture",
+            encode_one(request).unwrap(),
+        ).unwrap();
+    }
+
+    // User A should only see their 3 captures
+    let list_response_a = pic.query_call(
+        canister_id,
+        user_a,
+        "get_my_captures",
+        encode_args((None::<CaptureFilter>, None::<PaginationParams>)).unwrap(),
+    ).unwrap();
+
+    let captures_a: PaginatedCaptureResponse = decode_one(&unwrap_wasm_result(list_response_a)).unwrap();
+    assert_eq!(captures_a.total, 3, "User A should see exactly 3 captures");
+    for capture in &captures_a.items {
+        assert!(capture.title.starts_with("User A's"), "User A should only see their own captures");
+    }
+
+    // User B should only see their 2 captures
+    let list_response_b = pic.query_call(
+        canister_id,
+        user_b,
+        "get_my_captures",
+        encode_args((None::<CaptureFilter>, None::<PaginationParams>)).unwrap(),
+    ).unwrap();
+
+    let captures_b: PaginatedCaptureResponse = decode_one(&unwrap_wasm_result(list_response_b)).unwrap();
+    assert_eq!(captures_b.total, 2, "User B should see exactly 2 captures");
+    for capture in &captures_b.items {
+        assert!(capture.title.starts_with("User B's"), "User B should only see their own captures");
+    }
+
+    // Anonymous user should see 0 captures
+    let list_response_anon = pic.query_call(
+        canister_id,
+        Principal::anonymous(),
+        "get_my_captures",
+        encode_args((None::<CaptureFilter>, None::<PaginationParams>)).unwrap(),
+    ).unwrap();
+
+    let captures_anon: PaginatedCaptureResponse = decode_one(&unwrap_wasm_result(list_response_anon)).unwrap();
+    assert_eq!(captures_anon.total, 0, "Anonymous user should see no captures");
+}
+
+#[test]
+fn test_multi_user_data_isolation() {
+    // AC-5.6.12.6: Comprehensive multi-user isolation test
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[251, 252, 253, 254, 255, 1, 2, 3, 4, 5]);
+
+    // User A creates a workspace with documents
+    let ws_request = CreateWorkspaceRequest {
+        name: "User A's Workspace".to_string(),
+        description: Some("Contains sensitive data".to_string()),
+        icon: None,
+        parent_id: None,
+    };
+
+    let ws_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_workspace",
+        encode_one(ws_request).unwrap(),
+    ).unwrap();
+
+    let workspace_a: Result<Workspace, String> = decode_one(&unwrap_wasm_result(ws_response)).unwrap();
+    let workspace_id_a = workspace_a.unwrap().id;
+
+    // User A creates a document in their workspace
+    let doc_request = CreateDocumentRequest {
+        workspace_id: workspace_id_a,
+        title: "Sensitive Document".to_string(),
+        content: Some("Secret information".to_string()),
+        template_id: None,
+        parent_id: None,
+    };
+
+    pic.update_call(
+        canister_id,
+        user_a,
+        "create_document",
+        encode_one(doc_request).unwrap(),
+    ).unwrap();
+
+    // User B creates their own workspace
+    let ws_request_b = CreateWorkspaceRequest {
+        name: "User B's Workspace".to_string(),
+        description: None,
+        icon: None,
+        parent_id: None,
+    };
+
+    pic.update_call(
+        canister_id,
+        user_b,
+        "create_workspace",
+        encode_one(ws_request_b).unwrap(),
+    ).unwrap();
+
+    // VERIFICATION: User B cannot access User A's data
+
+    // 1. User B's get_my_workspaces should not include User A's workspace
+    let ws_list_b = pic.query_call(
+        canister_id,
+        user_b,
+        "get_my_workspaces",
+        encode_one(()).unwrap(),
+    ).unwrap();
+
+    let workspaces_b: Vec<Workspace> = decode_one(&unwrap_wasm_result(ws_list_b)).unwrap();
+    assert_eq!(workspaces_b.len(), 1, "User B should only see their own workspace");
+    assert_eq!(workspaces_b[0].name, "User B's Workspace");
+
+    // 2. User B cannot get documents from User A's workspace
+    let docs_response = pic.query_call(
+        canister_id,
+        user_b,
+        "get_workspace_documents",
+        encode_one(workspace_id_a).unwrap(),
+    ).unwrap();
+
+    let docs: Vec<Document> = decode_one(&unwrap_wasm_result(docs_response)).unwrap();
+    assert_eq!(docs.len(), 0, "User B should not see User A's documents");
+
+    // 3. User B cannot get User A's workspace directly
+    let get_ws_response = pic.query_call(
+        canister_id,
+        user_b,
+        "get_workspace",
+        encode_one(workspace_id_a).unwrap(),
+    ).unwrap();
+
+    let ws_result: Option<Workspace> = decode_one(&unwrap_wasm_result(get_ws_response)).unwrap();
+    assert!(ws_result.is_none(), "User B should not be able to get User A's workspace");
+}
+
+#[test]
+fn test_update_capture_unauthorized_fos_5_6_12() {
+    // AC-5.6.12.1: update_capture returns error for non-owner
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+
+    // User A creates a capture
+    let request = CreateCaptureRequest {
+        capture_type: CaptureType::Task,
+        title: "User A's Task".to_string(),
+        description: None,
+        content: None,
+        priority: Some(Priority::High),
+        fields: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_capture",
+        encode_one(request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Capture, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let capture_id = created.unwrap().id;
+
+    // User B tries to update User A's capture
+    let update_request = UpdateCaptureRequest {
+        id: capture_id,
+        title: Some("Hacked Title".to_string()),
+        description: None,
+        content: None,
+        priority: None,
+        status: None,
+        fields: None,
+    };
+
+    let update_response = pic.update_call(
+        canister_id,
+        user_b,
+        "update_capture",
+        encode_one(update_request).unwrap(),
+    ).unwrap();
+
+    let result: Result<Capture, String> = decode_one(&unwrap_wasm_result(update_response)).unwrap();
+    assert!(result.is_err(), "User B should NOT be able to update User A's capture");
+}
+
+#[test]
+fn test_delete_capture_unauthorized() {
+    // AC-5.6.12.1: delete_capture returns error for non-owner
+    let (pic, canister_id, user_a) = setup();
+    let user_b = Principal::from_slice(&[16, 17, 18, 19, 20, 21, 22, 23, 24, 25]);
+
+    // User A creates a capture
+    let request = CreateCaptureRequest {
+        capture_type: CaptureType::Task,
+        title: "User A's Task".to_string(),
+        description: None,
+        content: None,
+        priority: Some(Priority::Medium),
+        fields: None,
+    };
+
+    let create_response = pic.update_call(
+        canister_id,
+        user_a,
+        "create_capture",
+        encode_one(request).unwrap(),
+    ).unwrap();
+
+    let created: Result<Capture, String> = decode_one(&unwrap_wasm_result(create_response)).unwrap();
+    let capture_id = created.unwrap().id;
+
+    // User B tries to delete User A's capture
+    let delete_response = pic.update_call(
+        canister_id,
+        user_b,
+        "delete_capture",
+        encode_one(capture_id).unwrap(),
+    ).unwrap();
+
+    let result: Result<Capture, String> = decode_one(&unwrap_wasm_result(delete_response)).unwrap();
+    assert!(result.is_err(), "User B should NOT be able to delete User A's capture");
+
+    // Verify capture still exists for User A
+    let get_response = pic.query_call(
+        canister_id,
+        user_a,
+        "get_capture",
+        encode_one(capture_id).unwrap(),
+    ).unwrap();
+
+    let capture: Option<Capture> = decode_one(&unwrap_wasm_result(get_response)).unwrap();
+    assert!(capture.is_some(), "Capture should still exist after unauthorized delete attempt");
+}

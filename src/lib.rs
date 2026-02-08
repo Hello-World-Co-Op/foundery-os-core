@@ -1,3 +1,4 @@
+mod authorization;
 mod discussion;
 mod state;
 mod types;
@@ -181,9 +182,26 @@ fn create_capture(request: CreateCaptureRequest) -> Result<Capture, String> {
     Ok(capture)
 }
 
+/// Get a capture by ID.
+/// Only returns the capture if caller is the owner (AC-5.6.12.1).
+/// @see FOS-5.6.12 - User Data Backend Authorization
 #[query]
 fn get_capture(id: CaptureId) -> Option<Capture> {
-    STATE.with(|state| state.borrow().get_capture(id).cloned())
+    let caller = ic_cdk::caller();
+    if caller == Principal::anonymous() {
+        return None;
+    }
+
+    STATE.with(|state| {
+        let s = state.borrow();
+        if let Some(capture) = s.get_capture(id) {
+            // Only return if caller owns the capture
+            if capture.owner == caller {
+                return Some(capture.clone());
+            }
+        }
+        None
+    })
 }
 
 #[update]
@@ -265,9 +283,26 @@ fn create_sprint(request: CreateSprintRequest) -> Result<Sprint, String> {
     Ok(sprint)
 }
 
+/// Get a sprint by ID.
+/// Only returns the sprint if caller is the owner.
+/// @see FOS-5.6.12 - User Data Backend Authorization
 #[query]
 fn get_sprint(id: SprintId) -> Option<Sprint> {
-    STATE.with(|state| state.borrow().get_sprint(id).cloned())
+    let caller = ic_cdk::caller();
+    if caller == Principal::anonymous() {
+        return None;
+    }
+
+    STATE.with(|state| {
+        let s = state.borrow();
+        if let Some(sprint) = s.get_sprint(id) {
+            // Only return if caller owns the sprint
+            if sprint.owner == caller {
+                return Some(sprint.clone());
+            }
+        }
+        None
+    })
 }
 
 #[query]
@@ -377,9 +412,26 @@ fn create_workspace(request: CreateWorkspaceRequest) -> Result<Workspace, String
     Ok(workspace)
 }
 
+/// Get a workspace by ID.
+/// Only returns the workspace if caller is the owner (AC-5.6.12.3).
+/// @see FOS-5.6.12 - User Data Backend Authorization
 #[query]
 fn get_workspace(id: WorkspaceId) -> Option<Workspace> {
-    STATE.with(|state| state.borrow().get_workspace(id).cloned())
+    let caller = ic_cdk::caller();
+    if caller == Principal::anonymous() {
+        return None;
+    }
+
+    STATE.with(|state| {
+        let s = state.borrow();
+        if let Some(workspace) = s.get_workspace(id) {
+            // Only return if caller owns the workspace
+            if workspace.owner == caller {
+                return Some(workspace.clone());
+            }
+        }
+        None
+    })
 }
 
 #[query]
@@ -454,9 +506,26 @@ fn create_document(request: CreateDocumentRequest) -> Result<Document, String> {
     })
 }
 
+/// Get a document by ID.
+/// Only returns the document if caller is the owner (AC-5.6.12.2).
+/// @see FOS-5.6.12 - User Data Backend Authorization
 #[query]
 fn get_document(id: DocumentId) -> Option<Document> {
-    STATE.with(|state| state.borrow().get_document(id).cloned())
+    let caller = ic_cdk::caller();
+    if caller == Principal::anonymous() {
+        return None;
+    }
+
+    STATE.with(|state| {
+        let s = state.borrow();
+        if let Some(document) = s.get_document(id) {
+            // Only return if caller owns the document
+            if document.owner == caller {
+                return Some(document.clone());
+            }
+        }
+        None
+    })
 }
 
 #[update]
@@ -537,9 +606,23 @@ fn create_template(request: CreateTemplateRequest) -> Result<Template, String> {
     Ok(template)
 }
 
+/// Get a template by ID.
+/// Returns the template if caller is the owner OR if the template is public.
+/// @see FOS-5.6.12 - User Data Backend Authorization
 #[query]
 fn get_template(id: TemplateId) -> Option<Template> {
-    STATE.with(|state| state.borrow().get_template(id).cloned())
+    let caller = ic_cdk::caller();
+
+    STATE.with(|state| {
+        let s = state.borrow();
+        if let Some(template) = s.get_template(id) {
+            // Allow access if template is public OR if caller owns it
+            if template.is_public || (caller != Principal::anonymous() && template.owner == caller) {
+                return Some(template.clone());
+            }
+        }
+        None
+    })
 }
 
 #[query]
